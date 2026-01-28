@@ -3,6 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
+//this script is used to generate and save the Latin square sequence to a JSON file and a text file
+//the JSON file is used to store the Latin square sequence for each participant
+//the text file is used to store all the Latin square sequences for all participants
+//the Latin square sequence is a list of integers that represent the sequence of the Latin square
+
 public class LatinSquare : MonoBehaviour
 {
     public int participantCount = 84;        
