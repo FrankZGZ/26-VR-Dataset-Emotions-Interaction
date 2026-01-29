@@ -3,7 +3,7 @@ This repository is for our paper published in CHI2026 "_Understanding the Effect
 
 This dataset includes:
 - Sive VR scenes with affective interaction that can elicit different emotions.
-- An example VR app that includes all the six scenes, including an interactive SAM qestionnaire scene.
+- An example VR app that includes all the six scenes, including an interactive tutorial scene.
 - A tool that can record the user's behavior and SAM reports.
 
 <img src="figure/teaser.png" alt="Teaser" width="700"/>
