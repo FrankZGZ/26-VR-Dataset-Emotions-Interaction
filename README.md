@@ -33,6 +33,21 @@ More detials about the interaction can be found in the paper.
 1. Load the Unity project in the `unity` folder.
 1. For each scene, open the scene file in the `Assets/Scenes` folder and press the play button to test the scene.
 
+### VRME VibeVoice Server
+The local VRME integration workspace is in `vrme_vibevoice_pack`.
+
+1. Copy `vrme_vibevoice_pack/.env.example` to `vrme_vibevoice_pack/.env`.
+1. Add your `GROQ_API_KEY` to the new `.env` file.
+1. In PowerShell, run:
+
+```powershell
+cd D:\leetcode\26-VR-Dataset-Emotions-Interaction\vrme_vibevoice_pack
+.\setup_vibevoice.ps1
+.\run_server.ps1
+```
+
+The Unity side should connect to `ws://localhost:8080`.
+
 ### Test Procedure
 1. Open the scene `Tutorial_Interaction`.
 1. In the Hierarchy, enable the `GenerateLatinSquare` GameObject. 

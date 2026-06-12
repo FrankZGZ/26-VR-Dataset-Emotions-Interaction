@@ -10,7 +10,28 @@
 /[Bb]uilds/
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
+unity/[Ll]ibrary/
+unity/[Tt]emp/
+unity/[Oo]bj/
+unity/[Bb]uild/
+unity/[Bb]uilds/
+unity/[Ll]ogs/
+unity/[Uu]ser[Ss]ettings/
 *.log
+
+# VRME local server secrets and generated audio
+vrme_vibevoice_pack/.env
+vrme_vibevoice_pack/.env.*
+!vrme_vibevoice_pack/.env.example
+vrme_vibevoice_pack/vibevoice_worker_outputs/
+vrme_vibevoice_pack/__pycache__/
+vrme_vibevoice_pack/**/*.pyc
+unity/Assets/Scenes/Attic/VRME/.env
+unity/Assets/Scenes/Attic/VRME/.env.*
+!unity/Assets/Scenes/Attic/VRME/.env.example
+unity/Assets/Scenes/Attic/VRME/vibevoice_worker_outputs/
+unity/Assets/Scenes/Attic/VRME/__pycache__/
+unity/Assets/Scenes/Attic/VRME/**/*.pyc
 
 # By default unity supports Blender asset imports, *.blend1 blender files do not need to be commited to version control.
 *.blend1

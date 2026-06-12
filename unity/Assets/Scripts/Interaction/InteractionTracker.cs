@@ -1,6 +1,6 @@
 using UnityEngine;
 using Oculus.Interaction;
-using System.Linq;
+using System.Collections.Generic;
 
 /// <summary>
 /// This script tracks if an Oculus.Interaction interactable has been grabbed or triggered.
@@ -8,10 +8,18 @@ using System.Linq;
 /// </summary>
 public class InteractionTracker : MonoBehaviour
 {
+    private const int MaxStoredEvents = 20;
+    private static readonly List<string> recentEvents = new List<string>();
+
     [Header("Tracking Settings")]
+    [Tooltip("Optional name shown to the voice backend. Leave empty to use the GameObject name.")]
+    public string displayName = "";
+
     [Tooltip("Indicates whether this object has been used.")]
     public bool isUsed { get; private set; } = false;
     private GrabInteractable grabInteractable;
+
+    public string ContextName => string.IsNullOrWhiteSpace(displayName) ? gameObject.name : displayName;
 
     void Start()
     {
@@ -24,26 +32,45 @@ public class InteractionTracker : MonoBehaviour
 
     private void OnGrabbed(GrabInteractor interactor)
     {
-        if (!isUsed)
-        {
-            isUsed = true;
-            Debug.Log($"[InteractionTracker] Object {gameObject.name} has been used by grabbing.");
-
-            // Unsubscribe after the first trigger to improve performance
-            if (grabInteractable != null)
-            {
-                grabInteractable.WhenSelectingInteractorAdded.Action -= OnGrabbed;
-            }
-        }
+        bool firstUse = !isUsed;
+        isUsed = true;
+        Debug.Log($"[InteractionTracker] Object {gameObject.name} grabbed. firstUse={firstUse}");
+        AddRecentEvent(firstUse ? "grab:first" : "grab:repeat", interactor != null ? interactor.name : "");
     }
 
     private void OnTriggerEnter(Collider other)
     {
-        if (!isUsed)
+        bool firstUse = !isUsed;
+        isUsed = true;
+        Debug.Log($"[InteractionTracker] Object {gameObject.name} collision with {(other != null ? other.name : "unknown")}. firstUse={firstUse}");
+        AddRecentEvent(firstUse ? "collision:first" : "collision:repeat", other != null ? other.name : "");
+    }
+
+    private void AddRecentEvent(string eventType, string sourceName)
+    {
+        Vector3 p = transform.position;
+        string line = $"{System.DateTime.UtcNow:o} | {eventType} | {ContextName} | objectPos=({p.x:0.00},{p.y:0.00},{p.z:0.00})";
+        if (!string.IsNullOrWhiteSpace(sourceName))
         {
-            isUsed = true;
-            Debug.Log($"[InteractionTracker] Object {gameObject.name} has been used by collision with {other.name}.");
+            line += $" | source={sourceName}";
         }
+
+        recentEvents.Add(line);
+        while (recentEvents.Count > MaxStoredEvents)
+        {
+            recentEvents.RemoveAt(0);
+        }
+    }
+
+    public static string GetRecentEventsText(int maxEvents)
+    {
+        if (recentEvents.Count == 0 || maxEvents <= 0)
+        {
+            return "none";
+        }
+
+        int start = Mathf.Max(0, recentEvents.Count - maxEvents);
+        return string.Join("\n", recentEvents.GetRange(start, recentEvents.Count - start));
     }
 
     void OnDestroy()

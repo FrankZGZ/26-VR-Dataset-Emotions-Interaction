@@ -5,6 +5,8 @@ using Oculus.Interaction;
 
 public class HapticOnGrab : MonoBehaviour
 {
+    public bool enableHaptics = false;
+    public bool debugLogging = false;
     public HapticClip clip;
     public Transform leftAnchor;
     public Transform rightAnchor;
@@ -19,6 +21,16 @@ public class HapticOnGrab : MonoBehaviour
 
     void Start()
     {
+        if (!enableHaptics || clip == null)
+        {
+            if (debugLogging)
+            {
+                Debug.Log("[HapticOnGrab] Haptics disabled.");
+            }
+            enabled = false;
+            return;
+        }
+
         leftPlayer = new HapticClipPlayer(clip);
         rightPlayer = new HapticClipPlayer(clip);
 
@@ -30,22 +42,22 @@ public class HapticOnGrab : MonoBehaviour
         
         if (grabInteractable != null)
         {
-            Debug.Log("[HapticOnGrab] Found GrabInteractable");
+            if (debugLogging) Debug.Log("[HapticOnGrab] Found GrabInteractable");
             pointableElement = grabInteractable.PointableElement;
             
             if (pointableElement != null)
             {
                 pointableElement.WhenPointerEventRaised += OnPointerEventRaised;
-                Debug.Log("[HapticOnGrab] Successfully registered for pointer events");
+                if (debugLogging) Debug.Log("[HapticOnGrab] Successfully registered for pointer events");
             }
             else
             {
-                Debug.LogError("[HapticOnGrab] No PointableElement found on GrabInteractable");
+                Debug.LogWarning("[HapticOnGrab] No PointableElement found on GrabInteractable");
             }
         }
         else
         {
-            Debug.LogError("[HapticOnGrab] No GrabInteractable found on this object!");
+            Debug.LogWarning("[HapticOnGrab] No GrabInteractable found on this object.");
         }
     }
 
@@ -54,28 +66,28 @@ public class HapticOnGrab : MonoBehaviour
         // Check if this is a select event (grab)
         if (evt.Type == PointerEventType.Select)
         {
-            Debug.Log($"[HapticOnGrab] Grab event detected from pointer: {evt.Identifier}");
+            if (debugLogging) Debug.Log($"[HapticOnGrab] Grab event detected from pointer: {evt.Identifier}");
             
             // Find the interactor by identifier
             GrabInteractor interactor = FindInteractorById(evt.Identifier);
             if (interactor != null)
             {
                 bool isLeftHand = IsLeftHand(interactor.transform);
-                Debug.Log($"[HapticOnGrab] Object grabbed by {(isLeftHand ? "left" : "right")} hand");
+                if (debugLogging) Debug.Log($"[HapticOnGrab] Object grabbed by {(isLeftHand ? "left" : "right")} hand");
                 OnGrabbed(isLeftHand);
             }
         }
         // Check if this is an unselect event (release)
         else if (evt.Type == PointerEventType.Unselect || evt.Type == PointerEventType.Cancel)
         {
-            Debug.Log($"[HapticOnGrab] Release event detected from pointer: {evt.Identifier}");
+            if (debugLogging) Debug.Log($"[HapticOnGrab] Release event detected from pointer: {evt.Identifier}");
             
             // Find the interactor by identifier
             GrabInteractor interactor = FindInteractorById(evt.Identifier);
             if (interactor != null)
             {
                 bool isLeftHand = IsLeftHand(interactor.transform);
-                Debug.Log($"[HapticOnGrab] Object released by {(isLeftHand ? "left" : "right")} hand");
+                if (debugLogging) Debug.Log($"[HapticOnGrab] Object released by {(isLeftHand ? "left" : "right")} hand");
                 OnReleased(isLeftHand);
             }
         }
@@ -121,32 +133,32 @@ public class HapticOnGrab : MonoBehaviour
 
     public void OnGrabbed(bool isLeftHand)
     {
-        Debug.Log($"[HapticOnGrab] OnGrabbed called, isLeftHand: {isLeftHand}");
+        if (debugLogging) Debug.Log($"[HapticOnGrab] OnGrabbed called, isLeftHand: {isLeftHand}");
         
         if (isLeftHand)
         {
-            Debug.Log("[HapticOnGrab] Playing haptic on left controller");
+            if (debugLogging) Debug.Log("[HapticOnGrab] Playing haptic on left controller");
             leftPlayer.Play(Controller.Left);
         }
         else
         {
-            Debug.Log("[HapticOnGrab] Playing haptic on right controller");
+            if (debugLogging) Debug.Log("[HapticOnGrab] Playing haptic on right controller");
             rightPlayer.Play(Controller.Right);
         }
     }
 
     public void OnReleased(bool isLeftHand)
     {
-        Debug.Log($"[HapticOnGrab] OnReleased called, isLeftHand: {isLeftHand}");
+        if (debugLogging) Debug.Log($"[HapticOnGrab] OnReleased called, isLeftHand: {isLeftHand}");
         
         if (isLeftHand)
         {
-            Debug.Log("[HapticOnGrab] Stopping haptic on left controller");
+            if (debugLogging) Debug.Log("[HapticOnGrab] Stopping haptic on left controller");
             leftPlayer.Stop();
         }
         else
         {
-            Debug.Log("[HapticOnGrab] Stopping haptic on right controller");
+            if (debugLogging) Debug.Log("[HapticOnGrab] Stopping haptic on right controller");
             rightPlayer.Stop();
         }
     }

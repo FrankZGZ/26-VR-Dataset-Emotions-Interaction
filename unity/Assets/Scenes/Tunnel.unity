@@ -11596,6 +11596,26 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   cameraRig: {fileID: 1255037619}
   backupTriggerObject: {fileID: 1191426274}
+  recordEyeGaze: 1
+  recordGazeObjectAttention: 1
+  useHeadForwardAsGazeFallback: 0
+  recordFaceExpressions: 1
+  recordHeartRatePlaceholder: 1
+  gazeConfidenceThreshold: 0.5
+  gazeRayMaxDistance: 20
+  gazeNearRayAngleDegrees: 14
+  gazeLongAttentionThresholdSeconds: 0.5
+  sampleOnlyWhileVoiceRecording: 1
+  sampleOnVoiceRecordingEdges: 1
+  logRuntimeTrackingState: 1
+  writeLiveDebugSnapshot: 1
+  runtimeDebugIntervalSeconds: 5
+  showGazeDebugMarker: 1
+  showGazeDebugRay: 1
+  showGazeDebugOnlyWhileVoiceSampling: 0
+  gazeDebugMarkerSize: 0.06
+  gazeDebugDefaultDistance: 3
+  gazeDebugColor: {r: 0, g: 1, b: 0.25, a: 1}
 --- !u!1 &483109919
 GameObject:
   m_ObjectHideFlags: 0
@@ -17744,7 +17764,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &709561858
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -21572,8 +21592,8 @@ MonoBehaviour:
   isInsightPassthroughEnabled: 0
   shouldBoundaryVisibilityBeSuppressed: 0
   requestBodyTrackingPermissionOnStartup: 0
-  requestFaceTrackingPermissionOnStartup: 0
-  requestEyeTrackingPermissionOnStartup: 0
+  requestFaceTrackingPermissionOnStartup: 1
+  requestEyeTrackingPermissionOnStartup: 1
   requestScenePermissionOnStartup: 0
   requestRecordAudioPermissionOnStartup: 0
   _localDimming: 1
@@ -46076,6 +46096,67 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1811450285}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1001 &1730896901
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1603518291700351669, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: scenePrompt
+      value: this is a dark tunnel
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -1.69
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0.16
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7030998814401213132, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_Name
+      value: VRME_Rocketbox_Female_Adult_01
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
 --- !u!1 &1736937639
 GameObject:
   m_ObjectHideFlags: 0
@@ -47696,6 +47777,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 106f12093ffa3e24f967aa7a436a5e2a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  enableHaptics: 0
+  debugLogging: 0
   clip: {fileID: 2460798210113038985, guid: 861330de0d5e45f4a8af896fa343636e, type: 3}
   leftAnchor: {fileID: 1710697420}
   rightAnchor: {fileID: 1300897707}
@@ -47712,6 +47795,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: abe9731c7b6cd0f44b424d9300189ccc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  displayName: 
 --- !u!114 &1807920011
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -47724,43 +47808,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2fad1ad1b9047f447ad9a2e02f078438, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  bodyPosePlayer: {fileID: 0}
-  enableReplayGrab: 1
-  grabInferenceMode: 4
-  grabDistance: 0.1
-  releaseDistance: 0.2
-  holdYawOnly: 0
-  useHysteresis: 1
-  minHoldTime: 1
-  objectGrabPoint: {fileID: 228789548}
-  snapRotationToGrabPoint: 1
-  fingerToPalmGrabDistance: 0.1
-  fingerToPalmReleaseDistance: 0.3
-  requiredCurledFingers: 3
-  leftHandJoint: -1
-  rightHandJoint: -1
-  leftThumbTipJoint: -1
-  leftIndexTipJoint: -1
-  rightThumbTipJoint: -1
-  rightIndexTipJoint: -1
-  leftPalmJoint: -1
-  rightPalmJoint: -1
-  leftMiddleTipJoint: -1
-  leftRingTipJoint: -1
-  leftPinkyTipJoint: -1
-  rightMiddleTipJoint: -1
-  rightRingTipJoint: -1
-  rightPinkyTipJoint: -1
-  useClosestPointOnColliders: 1
-  includeChildColliders: 1
-  moveWithRigidbodyInFixedUpdate: 1
-  forceKinematicWhileGrabbed: 1
-  restoreKinematicOnRelease: 1
-  debugLogs: 0
-  warnOnMissingJoints: 1
-  logGrabEvents: 1
-  logProximityEvents: 1
-  logFistGestureEvents: 1
 --- !u!1 &1808167723
 GameObject:
   m_ObjectHideFlags: 0
@@ -49110,7 +49157,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1882066502
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -58047,6 +58094,7 @@ SceneRoots:
   - {fileID: 1540552395}
   - {fileID: 260100402}
   - {fileID: 424686991}
+  - {fileID: 1730896901}
   - {fileID: 2050040218}
   - {fileID: 2056999408}
   - {fileID: 481075468}
