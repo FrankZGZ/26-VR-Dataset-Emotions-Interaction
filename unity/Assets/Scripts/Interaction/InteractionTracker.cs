@@ -17,9 +17,22 @@ public class InteractionTracker : MonoBehaviour
 
     [Tooltip("Indicates whether this object has been used.")]
     public bool isUsed { get; private set; } = false;
+    [Tooltip("True for gaze-only targets such as avatars. They can be looked at but should not be interpreted as held or used.")]
+    public bool attentionOnlyTarget = false;
+    [Tooltip("When false, trigger/collision events will not mark this object as used.")]
+    public bool trackTriggerCollisions = true;
+    public bool wasGrabbedByController { get; private set; } = false;
+    public bool wasCollisionUsed { get; private set; } = false;
+    public string lastUseSource { get; private set; } = "";
     private GrabInteractable grabInteractable;
 
     public string ContextName => string.IsNullOrWhiteSpace(displayName) ? gameObject.name : displayName;
+    public string InteractionStateSummary =>
+        "attentionOnly=" + attentionOnlyTarget +
+        ", controllerGrabbed=" + wasGrabbedByController +
+        ", collisionUsed=" + wasCollisionUsed +
+        ", used=" + isUsed +
+        (string.IsNullOrWhiteSpace(lastUseSource) ? "" : ", lastUseSource=" + lastUseSource);
 
     void Start()
     {
@@ -32,16 +45,31 @@ public class InteractionTracker : MonoBehaviour
 
     private void OnGrabbed(GrabInteractor interactor)
     {
+        if (attentionOnlyTarget)
+        {
+            Debug.Log($"[InteractionTracker] Ignored grab on attention-only target {gameObject.name}.");
+            return;
+        }
+
         bool firstUse = !isUsed;
         isUsed = true;
+        wasGrabbedByController = true;
+        lastUseSource = "controller_grab";
         Debug.Log($"[InteractionTracker] Object {gameObject.name} grabbed. firstUse={firstUse}");
         AddRecentEvent(firstUse ? "grab:first" : "grab:repeat", interactor != null ? interactor.name : "");
     }
 
     private void OnTriggerEnter(Collider other)
     {
+        if (attentionOnlyTarget || !trackTriggerCollisions)
+        {
+            return;
+        }
+
         bool firstUse = !isUsed;
         isUsed = true;
+        wasCollisionUsed = true;
+        lastUseSource = "collision_or_trigger";
         Debug.Log($"[InteractionTracker] Object {gameObject.name} collision with {(other != null ? other.name : "unknown")}. firstUse={firstUse}");
         AddRecentEvent(firstUse ? "collision:first" : "collision:repeat", other != null ? other.name : "");
     }

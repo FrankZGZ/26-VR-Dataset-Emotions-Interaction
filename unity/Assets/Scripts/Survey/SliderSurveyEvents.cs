@@ -90,10 +90,28 @@ public class SurveyEvents : MonoBehaviour
         var surveySingle = new EmotionSurveySingle();
         surveySingle.participantId = PlayerData.participantId;
         surveySingle.loginId = PlayerData.loginId;
+        surveySingle.sessionId = PlayerData.sessionId;
+        surveySingle.avatarCondition = PlayerData.avatarCondition;
         surveySingle.timestampUtcUnixMs = System.DateTimeOffset.Now.ToUnixTimeMilliseconds();
         surveySingle.sceneName = SceneManager.GetActiveScene().name;
+        surveySingle.sceneIndex = PlayerData.currentSceneIndex;
+        surveySingle.sceneSequenceLength = PlayerData.sceneSequence != null ? PlayerData.sceneSequence.Length : 0;
+        surveySingle.surveyVersion = "slider_valence_arousal_v1";
         surveySingle.valenceValue = valenceSlider.value;
         surveySingle.arousalValue = arousalSlider.value;
+        surveySingle.dominanceValue = -1f;
+        surveySingle.socialPresenceValue = -1f;
+        surveySingle.autonomyValue = -1f;
+        surveySingle.agencyValue = -1f;
+        surveySingle.helpfulnessValue = -1f;
+        surveySingle.trustValue = -1f;
+        surveySingle.intrusivenessValue = -1f;
+        surveySingle.warmthValue = -1f;
+        surveySingle.competenceValue = -1f;
+        surveySingle.contextAwarenessValue = -1f;
+        surveySingle.guidanceClarityValue = -1f;
+        surveySingle.attentionAccuracyValue = -1f;
+        surveySingle.conversationNaturalnessValue = -1f;
 
         // Serialization. 
         var surveyDataSingle = JsonUtility.ToJson(surveySingle);

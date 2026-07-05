@@ -16,10 +16,37 @@ public class TeleportationEventListener : MonoBehaviour
     public GameObject[] disableAfterTeleport;
     public GameObject[] destroyAfterTeleport;
     public GameObject[] refreshAfterTeleport;
+    public bool hideQuestionnaireOnStart = true;
+    [Header("Keyboard testing")]
+    public bool enableKeyboardExitTrigger = true;
+    public KeyCode keyboardExitTriggerKey = KeyCode.E;
+    [Tooltip("Move the XR rig to the scene's original questionnaire viewing point.")]
+    public bool repositionRigForSurvey = true;
+    [Tooltip("Legacy behavior that teleports the rig and resets scene objects. Keep disabled when showing the in-scene SAM/ASAQ UI.")]
+    public bool applyLegacySceneResetAfterSurvey = false;
+    private bool questionnaireTriggered;
+    private float colliderTriggerArmedAt;
 
     private void Start()
     {
-        teleportationProvider = locomotionSystem.GetComponent<UnityEngine.XR.Interaction.Toolkit.Locomotion.Teleportation.TeleportationProvider>();
+        // Some scenes (notably Tunnel) spawn the XR rig inside a large exit
+        // trigger. Ignore that initial overlap so SAM does not appear at startup.
+        colliderTriggerArmedAt = Time.unscaledTime + 1.5f;
+
+        if (hideQuestionnaireOnStart && samTask != null)
+        {
+            samTask.SetActive(false);
+        }
+
+        if (locomotionSystem != null)
+        {
+            teleportationProvider = locomotionSystem.GetComponent<UnityEngine.XR.Interaction.Toolkit.Locomotion.Teleportation.TeleportationProvider>();
+        }
+
+        if (teleportationProvider == null)
+        {
+            teleportationProvider = FindObjectOfType<UnityEngine.XR.Interaction.Toolkit.Locomotion.Teleportation.TeleportationProvider>();
+        }
 
         if (teleportationProvider != null)
         {
@@ -40,6 +67,17 @@ public class TeleportationEventListener : MonoBehaviour
         }
     }
 
+    private void Update()
+    {
+        if (enableKeyboardExitTrigger &&
+            Input.GetKeyDown(keyboardExitTriggerKey) &&
+            !questionnaireTriggered &&
+            (samTask == null || !samTask.activeInHierarchy))
+        {
+            TriggerQuestionnaire("keyboard " + keyboardExitTriggerKey);
+        }
+    }
+
     private void OnEndLocomotion(LocomotionSystem system)
     {
         // This method is called when teleportation (or any other locomotion) ends.
@@ -50,26 +88,76 @@ public class TeleportationEventListener : MonoBehaviour
     // Triggered with colliders. 
     private void OnTriggerEnter(Collider other)
     {
-        Debug.Log("Collider Event Triggered!");
-        if (other.CompareTag("Player"))
-        {
-            // Save camera pose data before ending the scene
-            CameraPoseSender cameraPoseSender = FindObjectOfType<CameraPoseSender>();
-            if (cameraPoseSender != null)
-            {
-                cameraPoseSender.EndSessionAndSendData();
-                Debug.Log("Camera pose data saved before starting SAM survey!");
-            }
-            else
-            {
-                Debug.LogWarning("CameraPoseSender not found in the scene!");
-            }
+        Debug.Log("Collider Event Triggered! collider=" + other.name + ", tag=" + other.tag);
 
-            // Triggered when the XR player's collider enters the teleportation pad collider
-            HandleTeleportPadInteraction();
-            // Teleport to origin.
+        if (Time.unscaledTime < colliderTriggerArmedAt ||
+            questionnaireTriggered ||
+            !IsPlayerCollider(other))
+        {
+            return;
+        }
+
+        TriggerQuestionnaire("collider " + other.name);
+    }
+
+    private void TriggerQuestionnaire(string source)
+    {
+        if (questionnaireTriggered || (samTask != null && samTask.activeInHierarchy))
+        {
+            return;
+        }
+
+        questionnaireTriggered = true;
+        Debug.Log("[Survey] Exit triggered via " + source);
+
+        CameraPoseSender cameraPoseSender = FindObjectOfType<CameraPoseSender>();
+        if (cameraPoseSender != null)
+        {
+            cameraPoseSender.EndSessionAndSendData();
+            Debug.Log("Camera pose data saved before starting SAM survey!");
+        }
+        else
+        {
+            Debug.LogWarning("CameraPoseSender not found in the scene!");
+        }
+
+        HandleTeleportPadInteraction();
+        if (repositionRigForSurvey)
+        {
             TeleportToOrigin();
         }
+    }
+
+    private bool IsPlayerCollider(Collider other)
+    {
+        if (other == null)
+        {
+            return false;
+        }
+
+        if (other.CompareTag("Player"))
+        {
+            return true;
+        }
+
+        Transform colliderTransform = other.transform;
+        if (player != null &&
+            (colliderTransform == player.transform ||
+             colliderTransform.IsChildOf(player.transform) ||
+             player.transform.IsChildOf(colliderTransform)))
+        {
+            return true;
+        }
+
+        if (ovrCameraRig != null && colliderTransform.IsChildOf(ovrCameraRig.transform))
+        {
+            return true;
+        }
+
+        Rigidbody attachedBody = other.attachedRigidbody;
+        return attachedBody != null &&
+               ovrCameraRig != null &&
+               attachedBody.transform.IsChildOf(ovrCameraRig.transform);
     }
 
     
@@ -92,12 +180,17 @@ public class TeleportationEventListener : MonoBehaviour
             Debug.LogError("samTask reference is null! Please assign it in the Inspector.");
         }
         
-        // Activate the task rays.
-        if (leftTaskRay != null)  leftTaskRay.SetActive(true);
-        if (rightTaskRay != null) rightTaskRay.SetActive(true);
+        // Activate all parts of the dedicated questionnaire rays. Merely setting
+        // the child GameObject active is insufficient when an ancestor, line
+        // renderer, or ray behaviour has been disabled by the gameplay setup.
+        EnableQuestionnaireRay(leftTaskRay, "left");
+        EnableQuestionnaireRay(rightTaskRay, "right");
 
-        // Disable the disableAfterTeleport objects.
-        if (disableAfterTeleport != null)
+        if (applyLegacySceneResetAfterSurvey)
+        {
+            // Legacy scene-transition behavior. This remains available for old flows,
+            // but must stay disabled for the in-scene SAM/ASAQ questionnaire.
+            if (disableAfterTeleport != null)
             {
                 foreach (GameObject obj in disableAfterTeleport)
                 {
@@ -108,39 +201,83 @@ public class TeleportationEventListener : MonoBehaviour
                 }
             }
 
-        // Destroy the destroyAfterTeleport objects.
-        if (destroyAfterTeleport != null)
-        {
-            foreach (GameObject obj in destroyAfterTeleport)
+            if (destroyAfterTeleport != null)
             {
-                if (obj != null)
+                foreach (GameObject obj in destroyAfterTeleport)
                 {
-                    Destroy(obj);
+                    if (obj != null)
+                    {
+                        Destroy(obj);
+                    }
                 }
+            }
+
+            if (refreshAfterTeleport != null)
+            {
+                foreach (GameObject obj in refreshAfterTeleport)
+                {
+                    if (obj != null)
+                    {
+                        Animator animator = obj.GetComponent<Animator>();
+                        if (animator != null)
+                        {
+                            animator.Rebind();
+                            animator.Update(0f);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static void EnableQuestionnaireRay(GameObject taskRay, string side)
+    {
+        if (taskRay == null)
+        {
+            Debug.LogWarning("[Survey] " + side + " task ray is not assigned.");
+            return;
+        }
+
+        Transform current = taskRay.transform.parent;
+        while (current != null)
+        {
+            if (!current.gameObject.activeSelf)
+            {
+                current.gameObject.SetActive(true);
+            }
+            current = current.parent;
+        }
+
+        taskRay.SetActive(true);
+
+        foreach (Behaviour behaviour in taskRay.GetComponents<Behaviour>())
+        {
+            if (behaviour != null)
+            {
+                behaviour.enabled = true;
             }
         }
 
-        // Refresh the refreshAfterTeleport objects.
-        if (refreshAfterTeleport != null)
+        foreach (Renderer renderer in taskRay.GetComponents<Renderer>())
         {
-            foreach (GameObject obj in refreshAfterTeleport)
+            if (renderer != null)
             {
-                if (obj != null)
-                {
-                Animator animator = obj.GetComponent<Animator>();
-                if (animator != null)
-                {
-                    animator.Rebind();
-                    animator.Update(0f);
-                }
-                }
+                renderer.enabled = true;
             }
         }
-        
-        
+
+        Debug.Log("[Survey] Enabled " + side + " task ray. activeSelf=" +
+            taskRay.activeSelf + ", activeInHierarchy=" + taskRay.activeInHierarchy);
     }
+
     private void TeleportToOrigin()
     {
+        if (ovrCameraRig == null)
+        {
+            Debug.LogWarning("OVRCameraRig is not assigned; questionnaire opened without repositioning the rig.");
+            return;
+        }
+
         // 位置
         ovrCameraRig.transform.position = teleportTargetPosition;
 

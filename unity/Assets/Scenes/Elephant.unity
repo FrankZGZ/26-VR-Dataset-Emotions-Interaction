@@ -684,6 +684,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 106f12093ffa3e24f967aa7a436a5e2a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  enableHaptics: 0
+  debugLogging: 0
   clip: {fileID: 2460798210113038985, guid: 69c9da9daf7108845a5a1e42a131522b, type: 3}
   leftAnchor: {fileID: 408250395}
   rightAnchor: {fileID: 1485928361}
@@ -885,6 +887,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: abe9731c7b6cd0f44b424d9300189ccc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  displayName: 
+  attentionOnlyTarget: 0
+  trackTriggerCollisions: 1
 --- !u!1 &8247323
 GameObject:
   m_ObjectHideFlags: 0
@@ -1544,7 +1549,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   realSceneBuildIndex: 7
   endSceneBuildIndex: 8
-  realSceneWaitTime: 5
+  realSceneWaitTime: 10
 --- !u!4 &56530541
 Transform:
   m_ObjectHideFlags: 0
@@ -1558,7 +1563,7 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 1626724803}
+  - {fileID: 852973135}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &57535012
@@ -3426,12 +3431,22 @@ MonoBehaviour:
   dominanceButtons: {fileID: 533955563}
   submitButton: {fileID: 82804142}
   debugInfo: {fileID: 311897933}
+  createLikertPageAtRuntime: 1
+  autoEnableTaskRaysOnSurveyStart: 1
+  allowControllerButtonSubmit: 1
+  likertRoot: {fileID: 0}
+  likertPanelSize: {x: 980, y: 720}
+  likertStartPosition: {x: 52, y: -78}
+  likertItemSpacing: 46
+  likertSliderSize: {x: 300, y: 18}
+  likertWorldVerticalOffset: -2
   disableAfterSubmit:
   - {fileID: 884936866}
   - {fileID: 1536709219}
   - {fileID: 1685090099}
   enableAfterSubmit:
   - {fileID: 1675064680}
+  hideQuestionnaireOnSceneStart: 1
 --- !u!114 &129612524
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -17694,6 +17709,74 @@ Transform:
   - {fileID: 114494494}
   m_Father: {fileID: 1687453337}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1001 &852973134
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 56530541}
+    m_Modifications:
+    - target: {fileID: 1603518291700351669, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: scenePrompt
+      value: You are surrounded by a herd of elephants in an exciting natural setting.
+        The participant can approach, observe, and feed the elephants, whose reactions
+        may be surprising.
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -1.22
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7030998814401213132, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_Name
+      value: VRME_Rocketbox_Female_Adult_01
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+--- !u!4 &852973135 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+  m_PrefabInstance: {fileID: 852973134}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &853932996
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -31454,6 +31537,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rayInteractor: {fileID: 1536709224}
+  logUiHits: 0
 --- !u!114 &1536709222
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -32632,6 +32716,7 @@ MonoBehaviour:
   - {fileID: 1916097020}
   destroyAfterTeleport: []
   refreshAfterTeleport: []
+  hideQuestionnaireOnStart: 1
 --- !u!65 &1582229186
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -33605,68 +33690,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1725957413}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1001 &1626724802
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 56530541}
-    m_Modifications:
-    - target: {fileID: 211648522321715397, guid: 192a2b0e9c18f1f4a8038184a99c3e78, type: 3}
-      propertyPath: m_Name
-      value: VRME_ReadyPlayerMe_Avatar
-      objectReference: {fileID: 0}
-    - target: {fileID: 1964097675426664539, guid: 192a2b0e9c18f1f4a8038184a99c3e78, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 1964097675426664539, guid: 192a2b0e9c18f1f4a8038184a99c3e78, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: -1.22
-      objectReference: {fileID: 0}
-    - target: {fileID: 1964097675426664539, guid: 192a2b0e9c18f1f4a8038184a99c3e78, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 1964097675426664539, guid: 192a2b0e9c18f1f4a8038184a99c3e78, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 1964097675426664539, guid: 192a2b0e9c18f1f4a8038184a99c3e78, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 1964097675426664539, guid: 192a2b0e9c18f1f4a8038184a99c3e78, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 1964097675426664539, guid: 192a2b0e9c18f1f4a8038184a99c3e78, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 1964097675426664539, guid: 192a2b0e9c18f1f4a8038184a99c3e78, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 1964097675426664539, guid: 192a2b0e9c18f1f4a8038184a99c3e78, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 1964097675426664539, guid: 192a2b0e9c18f1f4a8038184a99c3e78, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 192a2b0e9c18f1f4a8038184a99c3e78, type: 3}
---- !u!4 &1626724803 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 1964097675426664539, guid: 192a2b0e9c18f1f4a8038184a99c3e78, type: 3}
-  m_PrefabInstance: {fileID: 1626724802}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1632947965
 GameObject:
   m_ObjectHideFlags: 0
@@ -35735,6 +35758,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rayInteractor: {fileID: 1685090104}
+  logUiHits: 0
 --- !u!114 &1685090102
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -38947,6 +38971,32 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   cameraRig: {fileID: 249039941}
   backupTriggerObject: {fileID: 884936866}
+  recordEyeGaze: 1
+  recordGazeObjectAttention: 1
+  useHeadForwardAsGazeFallback: 1
+  recordFaceExpressions: 1
+  recordHeartRatePlaceholder: 1
+  gazeConfidenceThreshold: 0.5
+  gazeRayMaxDistance: 20
+  gazeNearRayAngleDegrees: 14
+  gazeLongAttentionThresholdSeconds: 0.5
+  gazeAvatarObjectNameHints: Rocketbox,Female_Adult,Male_Adult,ReadyPlayerMe,DigitalHuman,SocialAgent,Companion,Avatar,Character,Person,Human,NPC,Man,Woman,ManScreaming
+  autoAttachAvatarGazeTargets: 1
+  forceHideGazeDebugVisuals: 0
+  forceShowGazeDebugVisuals: 1
+  disableHandTrackingObjects: 1
+  handTrackingObjectNameHints: OVRHandDataSource,OVRLeftHandVisual,OVRRightHandVisual,OpenXRLeftHand,OpenXRRightHand,HandRayInteractor,HandRay,ControllerRay,ControllerRayInteractor,RayInteractor,OVRHands,UnityXRHands
+  sampleOnlyWhileVoiceRecording: 0
+  sampleOnVoiceRecordingEdges: 1
+  logRuntimeTrackingState: 1
+  writeLiveDebugSnapshot: 1
+  runtimeDebugIntervalSeconds: 5
+  showGazeDebugMarker: 1
+  showGazeDebugRay: 0
+  showGazeDebugOnlyWhileVoiceSampling: 0
+  gazeDebugMarkerSize: 0.12
+  gazeDebugDefaultDistance: 3
+  gazeDebugColor: {r: 0, g: 1, b: 0.25, a: 1}
 --- !u!114 &1818479831
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -38959,7 +39009,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 07524b858ed4b1e418381f03f48d4d41, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  countdownTimerSeconds: 30
+  countdownTimerSeconds: 60
   doorObject: {fileID: 0}
   skipSurvey: 0
   requiredInteractables: []

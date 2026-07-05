@@ -4892,6 +4892,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rayInteractor: {fileID: 215472579}
+  logUiHits: 0
 --- !u!114 &215472577
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5846,7 +5847,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   realSceneBuildIndex: 7
   endSceneBuildIndex: 0
-  realSceneWaitTime: 60
+  realSceneWaitTime: 10
 --- !u!4 &225417119
 Transform:
   m_ObjectHideFlags: 0
@@ -11562,7 +11563,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 07524b858ed4b1e418381f03f48d4d41, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  countdownTimerSeconds: 30
+  countdownTimerSeconds: 60
   doorObject: {fileID: 1452613708}
   skipSurvey: 0
   requiredInteractables: []
@@ -11598,22 +11599,28 @@ MonoBehaviour:
   backupTriggerObject: {fileID: 1191426274}
   recordEyeGaze: 1
   recordGazeObjectAttention: 1
-  useHeadForwardAsGazeFallback: 0
+  useHeadForwardAsGazeFallback: 1
   recordFaceExpressions: 1
   recordHeartRatePlaceholder: 1
   gazeConfidenceThreshold: 0.5
   gazeRayMaxDistance: 20
   gazeNearRayAngleDegrees: 14
   gazeLongAttentionThresholdSeconds: 0.5
-  sampleOnlyWhileVoiceRecording: 1
+  gazeAvatarObjectNameHints: Rocketbox,Female_Adult,Male_Adult,ReadyPlayerMe,DigitalHuman,SocialAgent,Companion,Avatar,Character,Person,Human,NPC,Man,Woman,ManScreaming
+  autoAttachAvatarGazeTargets: 1
+  forceHideGazeDebugVisuals: 0
+  forceShowGazeDebugVisuals: 1
+  disableHandTrackingObjects: 1
+  handTrackingObjectNameHints: OVRHandDataSource,OVRLeftHandVisual,OVRRightHandVisual,OpenXRLeftHand,OpenXRRightHand,HandRayInteractor,HandRay,ControllerRay,ControllerRayInteractor,RayInteractor,OVRHands,UnityXRHands
+  sampleOnlyWhileVoiceRecording: 0
   sampleOnVoiceRecordingEdges: 1
   logRuntimeTrackingState: 1
   writeLiveDebugSnapshot: 1
   runtimeDebugIntervalSeconds: 5
   showGazeDebugMarker: 1
-  showGazeDebugRay: 1
+  showGazeDebugRay: 0
   showGazeDebugOnlyWhileVoiceSampling: 0
-  gazeDebugMarkerSize: 0.06
+  gazeDebugMarkerSize: 0.12
   gazeDebugDefaultDistance: 3
   gazeDebugColor: {r: 0, g: 1, b: 0.25, a: 1}
 --- !u!1 &483109919
@@ -15951,6 +15958,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rayInteractor: {fileID: 656576859}
+  logUiHits: 0
 --- !u!114 &656576857
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -16736,6 +16744,7 @@ MonoBehaviour:
   - {fileID: 1982894379}
   destroyAfterTeleport: []
   refreshAfterTeleport: []
+  hideQuestionnaireOnStart: 1
 --- !u!65 &667973643
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -37958,12 +37967,22 @@ MonoBehaviour:
   dominanceButtons: {fileID: 84365285}
   submitButton: {fileID: 501585410}
   debugInfo: {fileID: 1329040168}
+  createLikertPageAtRuntime: 1
+  autoEnableTaskRaysOnSurveyStart: 1
+  allowControllerButtonSubmit: 1
+  likertRoot: {fileID: 0}
+  likertPanelSize: {x: 980, y: 720}
+  likertStartPosition: {x: 52, y: -78}
+  likertItemSpacing: 46
+  likertSliderSize: {x: 300, y: 18}
+  likertWorldVerticalOffset: -2
   disableAfterSubmit:
   - {fileID: 1191426274}
   - {fileID: 656576854}
   - {fileID: 215472574}
   enableAfterSubmit:
   - {fileID: 660813635}
+  hideQuestionnaireOnSceneStart: 1
 --- !u!114 &1428770890
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -38611,6 +38630,8 @@ GameObject:
   m_Component:
   - component: {fileID: 1452613709}
   - component: {fileID: 1452613711}
+  - component: {fileID: 1452613712}
+  - component: {fileID: 1452613713}
   m_Layer: 0
   m_Name: ExitDoor
   m_TagString: Untagged
@@ -38656,6 +38677,53 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
+--- !u!65 &1452613712
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1452613708}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 8, y: 5, z: 8}
+  m_Center: {x: 2.5, y: 2.5, z: 0}
+--- !u!114 &1452613713
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1452613708}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 531795f536e30564a9029aa81e22b49b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  locomotionSystem: {fileID: 0}
+  player: {fileID: 1393768105}
+  sceneController: {fileID: 481075466}
+  samTask: {fileID: 1191426274}
+  leftTaskRay: {fileID: 656576854}
+  rightTaskRay: {fileID: 215472574}
+  ovrCameraRig: {fileID: 885567551}
+  teleportTargetPosition: {x: 0, y: 0, z: 0}
+  teleportTargetYRotation: 0
+  disableAfterTeleport:
+  - {fileID: 1982894379}
+  destroyAfterTeleport: []
+  refreshAfterTeleport: []
+  hideQuestionnaireOnStart: 1
 --- !u!1 &1454716669
 GameObject:
   m_ObjectHideFlags: 0
@@ -46106,7 +46174,8 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 1603518291700351669, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
       propertyPath: scenePrompt
-      value: this is a dark tunnel
+      value: You are in a dark, confined tunnel. The participant can use a flashlight
+        to explore the darkness and feel more in control.
       objectReference: {fileID: 0}
     - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
       propertyPath: m_LocalPosition.x
@@ -47796,6 +47865,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   displayName: 
+  attentionOnlyTarget: 0
+  trackTriggerCollisions: 1
 --- !u!114 &1807920011
 MonoBehaviour:
   m_ObjectHideFlags: 0

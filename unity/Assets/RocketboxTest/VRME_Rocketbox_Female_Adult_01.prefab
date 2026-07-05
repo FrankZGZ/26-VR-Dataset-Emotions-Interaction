@@ -237,6 +237,7 @@ GameObject:
   - component: {fileID: 6750788707464913141}
   - component: {fileID: 1603518291700351669}
   - component: {fileID: 6259617727028928142}
+  - component: {fileID: 1941947703850528845}
   - component: {fileID: 810000000010}
   - component: {fileID: 3189897497447258052}
   - component: {fileID: 810000000011}
@@ -279,6 +280,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   serverUrl: ws://localhost:8080/
   recordKey: 118
+  enableKeyboardRecordKey: 1
+  enableControllerRecordButton: 1
+  recordControllerButton: 1
+  recordController: 2
   sampleRate: 16000
   maxRecordSeconds: 12
   autoConnectOnStart: 1
@@ -289,9 +294,12 @@ MonoBehaviour:
   includeInteractionContext: 1
   autoFindInteractionTrackers: 1
   keyInteractables: []
-  autoAttachInteractionTrackersToSceneObjects: 1
-  autoDiscoverSceneObjectsForContext: 1
+  autoAttachInteractionTrackersToSceneObjects: 0
+  autoAttachAvatarAttentionTracker: 1
+  autoDiscoverSceneObjectsForContext: 0
+  sendLiveContextOnlyForVoiceTurn: 1
   sceneObjectNameHints: HandTorch,Flashlight,Torch,Airplane,Plane,Stone,Rock,Banana,Fruit,Elephant,Dog,Puppy,Ball,Baseball,Book,Cup,Telescope,ManScreaming,Man,Gun,Sign,Door,Handle,Bar,Key,Switch,Button,Lever,Panel,Light,Exit
+  avatarObjectNameHints: Rocketbox,Female_Adult,Male_Adult,ReadyPlayerMe,DigitalHuman,SocialAgent,Companion,Avatar,Character,Person,Human,NPC,Man,Woman,ManScreaming
   maxDiscoveredSceneObjects: 20
   maxContextObjectDistance: 25
   playerTransform: {fileID: 0}
@@ -299,6 +307,7 @@ MonoBehaviour:
   playbackAudioSource: {fileID: 7692059242234185479}
   replyGain: 2.2
   streamReplyAudio: 1
+  avatarCondition: backend
   streamStartBufferSeconds: 0.18
   streamMaxSeconds: 45
   autoIntroOnStart: 0
@@ -322,6 +331,21 @@ MonoBehaviour:
   target: {fileID: 0}
   turnSpeed: 720
   yawOffsetDegrees: 0
+--- !u!114 &1941947703850528845
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7030998814401213132}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c292eeacca78227408e9975c0b4b22bd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  rayStartAboveFeet: 0.75
+  rayDistance: 4
+  maximumCorrection: 1.25
 --- !u!114 &810000000010
 MonoBehaviour:
   m_ObjectHideFlags: 0

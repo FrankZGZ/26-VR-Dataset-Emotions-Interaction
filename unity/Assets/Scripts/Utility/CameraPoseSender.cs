@@ -9,6 +9,7 @@ using System;
 public class CameraPoseSender : MonoBehaviour
 {
     public static string LatestRuntimeContextText = "No CameraPoseSender runtime context yet.";
+    public static string LatestVoiceRuntimeContextText = "No voice-window context yet.";
     public static bool VoiceSamplingActive { get; private set; }
 
     // Serializable class representing each recorded pose
@@ -43,6 +44,10 @@ public class CameraPoseSender : MonoBehaviour
         public bool hitInteractionObject;
         public string hitObjectName;
         public string hitDisplayName;
+        public string selectionSource;
+        public bool attentionOnly;
+        public bool controllerGrabbed;
+        public bool interactionUsed;
         public Vector3 hitPoint;
         public float hitDistance;
     }
@@ -53,6 +58,9 @@ public class CameraPoseSender : MonoBehaviour
         public string objectName;
         public string displayName;
         public bool wasSeen;
+        public bool attentionOnly;
+        public bool controllerGrabbed;
+        public bool interactionUsed;
         public bool attendedLongEnough;
         public int hitSampleCount;
         public int fixationCount;
@@ -97,9 +105,21 @@ public class CameraPoseSender : MonoBehaviour
     {
         public string loginId;
         public string participantId;
+        public string sessionId;
+        public string avatarCondition;
         public string sceneName;
+        public int sceneIndex;
+        public int sceneSequenceLength;
         public string timestamp;
         public string persistentDataPath;
+        public bool sampleOnlyWhileVoiceRecording;
+        public bool sampleOnVoiceRecordingEdges;
+        public bool recordEyeGaze;
+        public bool useHeadForwardAsGazeFallback;
+        public float gazeConfidenceThreshold;
+        public float gazeRayMaxDistance;
+        public float gazeNearRayAngleDegrees;
+        public float gazeLongAttentionThresholdSeconds;
         public int cameraPoseCount;
         public int gazeSampleCount;
         public int gazeHitSampleCount;
@@ -118,7 +138,24 @@ public class CameraPoseSender : MonoBehaviour
     {
         public string loginId;
         public string participantId;
+        public string sessionId;
+        public string avatarCondition;
         public string sceneName;
+        public int sceneIndex;
+        public int sceneSequenceLength;
+        public string startedAtUtc;
+        public string endedAtUtc;
+        public bool sampleOnlyWhileVoiceRecording;
+        public bool sampleOnVoiceRecordingEdges;
+        public bool recordEyeGaze;
+        public bool recordGazeObjectAttention;
+        public bool useHeadForwardAsGazeFallback;
+        public bool recordFaceExpressions;
+        public bool recordHeartRatePlaceholder;
+        public float gazeConfidenceThreshold;
+        public float gazeRayMaxDistance;
+        public float gazeNearRayAngleDegrees;
+        public float gazeLongAttentionThresholdSeconds;
         public List<CameraPose> cameraPoses = new List<CameraPose>();
         public List<GazeSample> gazeSamples = new List<GazeSample>();
         public List<GazeObjectSummary> gazeObjectSummaries = new List<GazeObjectSummary>();
@@ -140,9 +177,16 @@ public class CameraPoseSender : MonoBehaviour
     [Range(0.1f, 100f)] public float gazeRayMaxDistance = 20f;
     [Range(1f, 30f)] public float gazeNearRayAngleDegrees = 14f;
     [Range(0.1f, 5f)] public float gazeLongAttentionThresholdSeconds = 0.5f;
+    [Tooltip("Name hints for avatar/person objects that should block gaze raycasts even when they do not already have an InteractionTracker.")]
+    public string gazeAvatarObjectNameHints = "Rocketbox,Female_Adult,Male_Adult,ReadyPlayerMe,DigitalHuman,SocialAgent,Companion,Avatar,Character,Person,Human,NPC,Man,Woman,ManScreaming";
+    public bool autoAttachAvatarGazeTargets = true;
+    public bool forceHideGazeDebugVisuals = false;
+    public bool forceShowGazeDebugVisuals = true;
+    public bool disableHandTrackingObjects = true;
+    public string handTrackingObjectNameHints = "OVRHandDataSource,OVRLeftHandVisual,OVRRightHandVisual,OpenXRLeftHand,OpenXRRightHand,HandRayInteractor,HandRay,ControllerRay,ControllerRayInteractor,RayInteractor,OVRHands,UnityXRHands";
     [Header("Sampling trigger")]
     [Tooltip("When on, head/gaze is recorded only while the VRME voice key is held.")]
-    public bool sampleOnlyWhileVoiceRecording = true;
+    public bool sampleOnlyWhileVoiceRecording = false;
     [Tooltip("Records one sample immediately when the voice key is pressed and another when it is released.")]
     public bool sampleOnVoiceRecordingEdges = true;
     [Header("Debug output")]
@@ -151,9 +195,9 @@ public class CameraPoseSender : MonoBehaviour
     [Range(1f, 30f)] public float runtimeDebugIntervalSeconds = 5f;
     [Header("Gaze visualization")]
     public bool showGazeDebugMarker = true;
-    public bool showGazeDebugRay = true;
-    public bool showGazeDebugOnlyWhileVoiceSampling = true;
-    [Range(0.01f, 0.25f)] public float gazeDebugMarkerSize = 0.06f;
+    public bool showGazeDebugRay = false;
+    public bool showGazeDebugOnlyWhileVoiceSampling = false;
+    [Range(0.01f, 0.25f)] public float gazeDebugMarkerSize = 0.12f;
     [Range(0.5f, 10f)] public float gazeDebugDefaultDistance = 3f;
     public Color gazeDebugColor = new Color(0f, 1f, 0.25f, 1f);
 
@@ -179,6 +223,10 @@ public class CameraPoseSender : MonoBehaviour
     private int interactionSampleCount;
     private GameObject gazeDebugMarker;
     private LineRenderer gazeDebugRay;
+    private string recordingStartedAtUtc;
+    private int voiceWindowPoseStartIndex;
+    private int voiceWindowGazeStartIndex;
+    private float voiceWindowStartedAtRealtime;
 
     public static void BeginVoiceSampling()
     {
@@ -218,7 +266,32 @@ public class CameraPoseSender : MonoBehaviour
 
         faceExpressions = FindObjectOfType<OVRFaceExpressions>();
         TryStartOptionalTracking();
+        if (forceHideGazeDebugVisuals)
+        {
+            showGazeDebugMarker = false;
+            showGazeDebugRay = false;
+        }
+        else if (forceShowGazeDebugVisuals)
+        {
+            useHeadForwardAsGazeFallback = true;
+            showGazeDebugMarker = true;
+            showGazeDebugRay = false;
+        }
+
+        if (autoAttachAvatarGazeTargets)
+        {
+            int attachedCount = AttachAvatarGazeTargets();
+            Debug.Log("[Gaze] Auto-attached avatar/person gaze targets: " + attachedCount);
+        }
+
+        if (disableHandTrackingObjects)
+        {
+            int disabledCount = DisableHandTrackingObjects();
+            Debug.Log("[Input] Disabled hand-tracking objects/components: " + disabledCount);
+        }
+
         CreateGazeDebugVisuals();
+        recordingStartedAtUtc = System.DateTime.UtcNow.ToString("o");
     }
 
     private void Update()
@@ -231,6 +304,8 @@ public class CameraPoseSender : MonoBehaviour
             timeSinceLastRecord = 0.0f;
             RecordTrackingSample();
         }
+
+        UpdateGazeDebugFromCurrentPose();
 
         if (logRuntimeTrackingState || writeLiveDebugSnapshot)
         {
@@ -266,10 +341,21 @@ public class CameraPoseSender : MonoBehaviour
     // Function to record the camera's pose
     private void RecordCameraPose()
     {
+        Transform poseSource = ResolveHeadTransform();
+        if (poseSource == null && cameraRig != null)
+        {
+            poseSource = cameraRig.transform;
+        }
+
+        if (poseSource == null)
+        {
+            return;
+        }
+
         CameraPose pose = new CameraPose
         {
-            position = cameraRig.transform.position,
-            orientation = cameraRig.transform.rotation,
+            position = poseSource.position,
+            orientation = poseSource.rotation,
             timestamp = System.DateTime.UtcNow.ToString("o")  // Using ISO 8601 format for timestamp
         };
         bufferedPoses.Add(pose);
@@ -315,10 +401,10 @@ public class CameraPoseSender : MonoBehaviour
     private void BeginVoiceSamplingInstance()
     {
         timeSinceLastRecord = 0f;
-        interactionSampleCount = 0;
-        gazeObjectAccumulators.Clear();
-        currentGazeObjectKey = null;
-        currentGazeObjectRunSeconds = 0f;
+        voiceWindowPoseStartIndex = bufferedPoses.Count;
+        voiceWindowGazeStartIndex = bufferedGazeSamples.Count;
+        voiceWindowStartedAtRealtime = Time.realtimeSinceStartup;
+        LatestVoiceRuntimeContextText = "voiceRecordingActive=True\nvoice window just started";
         if (sampleOnVoiceRecordingEdges)
         {
             RecordTrackingSample();
@@ -333,6 +419,7 @@ public class CameraPoseSender : MonoBehaviour
         }
 
         UpdateLatestRuntimeContextText();
+        UpdateLatestVoiceRuntimeContextText();
     }
 
     private void RecordTrackingSample()
@@ -352,13 +439,25 @@ public class CameraPoseSender : MonoBehaviour
             return;
         }
 
-        string timestamp = System.DateTime.UtcNow.ToString("o");
+        GazeSample sample = BuildCurrentGazeSample();
+
+        if (recordGazeObjectAttention)
+        {
+            UpdateGazeObjectHit(sample);
+        }
+
+        bufferedGazeSamples.Add(sample);
+        latestGazeSample = sample;
+    }
+
+    private GazeSample BuildCurrentGazeSample()
+    {
         bool trackingEnabled = OVRPlugin.eyeTrackingEnabled;
         bool available = trackingEnabled && OVRPlugin.GetEyeGazesState(OVRPlugin.Step.Render, -1, ref eyeGazesState);
 
         GazeSample sample = new GazeSample
         {
-            timestamp = timestamp,
+            timestamp = System.DateTime.UtcNow.ToString("o"),
             available = available,
             trackingEnabled = trackingEnabled,
             deviceTime = available ? eyeGazesState.Time : 0,
@@ -372,13 +471,7 @@ public class CameraPoseSender : MonoBehaviour
             sample.rightEye = BuildGazeEyeSample(eyeGazesState.EyeGazes[(int)OVRPlugin.Eye.Right]);
         }
 
-        if (recordGazeObjectAttention)
-        {
-            UpdateGazeObjectHit(sample);
-        }
-
-        bufferedGazeSamples.Add(sample);
-        latestGazeSample = sample;
+        return sample;
     }
 
     private void LogRuntimeTrackingState()
@@ -405,6 +498,10 @@ public class CameraPoseSender : MonoBehaviour
               ", headFallback=" + latestGazeSample.usedHeadForwardFallback +
               ", hit=" + latestGazeSample.hitInteractionObject +
               ", hitName=" + latestGazeSample.hitDisplayName +
+              ", selectionSource=" + latestGazeSample.selectionSource +
+              ", attentionOnly=" + latestGazeSample.attentionOnly +
+              ", controllerGrabbed=" + latestGazeSample.controllerGrabbed +
+              ", interactionUsed=" + latestGazeSample.interactionUsed +
               ", hitDistance=" + latestGazeSample.hitDistance.ToString("0.00")
             : "gaze none";
 
@@ -422,6 +519,91 @@ public class CameraPoseSender : MonoBehaviour
             ", gazeHitSampleCount=" + CountGazeHitSamples() +
             ", gazeObjectSummaryCount=" + gazeObjectAccumulators.Count +
             ", interactionSampleCount=" + interactionSampleCount;
+    }
+
+    private void UpdateLatestVoiceRuntimeContextText()
+    {
+        int poseStart = Mathf.Clamp(voiceWindowPoseStartIndex, 0, bufferedPoses.Count);
+        int gazeStart = Mathf.Clamp(voiceWindowGazeStartIndex, 0, bufferedGazeSamples.Count);
+        int poseCount = bufferedPoses.Count - poseStart;
+        int gazeCount = bufferedGazeSamples.Count - gazeStart;
+        float duration = Mathf.Max(0f, Time.realtimeSinceStartup - voiceWindowStartedAtRealtime);
+
+        CameraPose lastPose = bufferedPoses.Count > 0 ? bufferedPoses[bufferedPoses.Count - 1] : latestCameraPose;
+        GazeSample lastGaze = bufferedGazeSamples.Count > 0 ? bufferedGazeSamples[bufferedGazeSamples.Count - 1] : latestGazeSample;
+
+        string poseText = lastPose != null
+            ? "latestHead position=" + FormatVector(lastPose.position) +
+              ", forward=" + FormatVector(lastPose.orientation * Vector3.forward)
+            : "latestHead none";
+
+        string gazeText = lastGaze != null
+            ? "latestAttention source=" + (lastGaze.usedHeadForwardFallback ? "head_forward_fallback" : (lastGaze.available ? "eye_gaze" : "none")) +
+              ", hit=" + lastGaze.hitInteractionObject +
+              ", hitName=" + lastGaze.hitDisplayName +
+              ", selectionSource=" + lastGaze.selectionSource +
+              ", attentionOnly=" + lastGaze.attentionOnly +
+              ", controllerGrabbed=" + lastGaze.controllerGrabbed +
+              ", interactionUsed=" + lastGaze.interactionUsed +
+              ", hitDistance=" + lastGaze.hitDistance.ToString("0.00")
+            : "latestAttention none";
+
+        LatestVoiceRuntimeContextText =
+            "voiceWindow duration=" + duration.ToString("0.00") + "s" +
+            ", poseSamples=" + poseCount +
+            ", gazeSamples=" + gazeCount + "\n" +
+            poseText + "\n" +
+            gazeText + "\n" +
+            "attendedDuringSpeech=" + BuildVoiceWindowAttendedObjectsContext(gazeStart);
+    }
+
+    private string BuildVoiceWindowAttendedObjectsContext(int gazeStartIndex)
+    {
+        if (bufferedGazeSamples.Count <= gazeStartIndex)
+        {
+            return "none";
+        }
+
+        var hitCounts = new Dictionary<string, int>();
+        var maxDistances = new Dictionary<string, float>();
+        for (int i = Mathf.Max(0, gazeStartIndex); i < bufferedGazeSamples.Count; i++)
+        {
+            GazeSample sample = bufferedGazeSamples[i];
+            if (sample == null || !sample.hitInteractionObject)
+            {
+                continue;
+            }
+
+            string name = string.IsNullOrWhiteSpace(sample.hitDisplayName) ? sample.hitObjectName : sample.hitDisplayName;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            if (!hitCounts.ContainsKey(name))
+            {
+                hitCounts[name] = 0;
+                maxDistances[name] = sample.hitDistance;
+            }
+
+            hitCounts[name]++;
+            maxDistances[name] = Mathf.Max(maxDistances[name], sample.hitDistance);
+        }
+
+        if (hitCounts.Count == 0)
+        {
+            return "none";
+        }
+
+        var parts = new List<string>();
+        foreach (var pair in hitCounts)
+        {
+            parts.Add(pair.Key + " attentionHits=" + pair.Value + " distance~" + maxDistances[pair.Key].ToString("0.0") + "m source=attentionOnly_notHeld");
+        }
+
+        parts.Sort();
+        int count = Mathf.Min(5, parts.Count);
+        return string.Join("; ", parts.GetRange(0, count));
     }
 
     private string BuildAttendedObjectsContextText()
@@ -482,9 +664,21 @@ public class CameraPoseSender : MonoBehaviour
             {
                 loginId = PlayerData.loginId,
                 participantId = participantId,
+                sessionId = PlayerData.sessionId,
+                avatarCondition = PlayerData.avatarCondition,
                 sceneName = sceneName,
+                sceneIndex = PlayerData.currentSceneIndex,
+                sceneSequenceLength = PlayerData.sceneSequence != null ? PlayerData.sceneSequence.Length : 0,
                 timestamp = System.DateTime.UtcNow.ToString("o"),
                 persistentDataPath = Application.persistentDataPath,
+                sampleOnlyWhileVoiceRecording = sampleOnlyWhileVoiceRecording,
+                sampleOnVoiceRecordingEdges = sampleOnVoiceRecordingEdges,
+                recordEyeGaze = recordEyeGaze,
+                useHeadForwardAsGazeFallback = useHeadForwardAsGazeFallback,
+                gazeConfidenceThreshold = gazeConfidenceThreshold,
+                gazeRayMaxDistance = gazeRayMaxDistance,
+                gazeNearRayAngleDegrees = gazeNearRayAngleDegrees,
+                gazeLongAttentionThresholdSeconds = gazeLongAttentionThresholdSeconds,
                 cameraPoseCount = bufferedPoses.Count,
                 gazeSampleCount = bufferedGazeSamples.Count,
                 gazeHitSampleCount = CountGazeHitSamples(),
@@ -530,13 +724,22 @@ public class CameraPoseSender : MonoBehaviour
     {
         OVRPose pose = eyeState.Pose.ToOVRPose();
         bool valid = eyeState.IsValid && eyeState.Confidence >= gazeConfidenceThreshold;
+        Transform trackingSpace = ResolveTrackingSpaceTransform();
+        Vector3 position = pose.position;
+        Quaternion orientation = pose.orientation;
+        if (trackingSpace != null)
+        {
+            position = trackingSpace.TransformPoint(pose.position);
+            orientation = trackingSpace.rotation * pose.orientation;
+        }
+
         return new GazeEyeSample
         {
             isValid = valid,
             confidence = eyeState.Confidence,
-            position = pose.position,
-            orientation = pose.orientation,
-            direction = pose.orientation * Vector3.forward
+            position = position,
+            orientation = orientation,
+            direction = orientation * Vector3.forward
         };
     }
 
@@ -570,6 +773,10 @@ public class CameraPoseSender : MonoBehaviour
         sample.hitInteractionObject = true;
         sample.hitObjectName = tracker.gameObject.name;
         sample.hitDisplayName = displayName;
+        sample.selectionSource = "gaze_attention";
+        sample.attentionOnly = true;
+        sample.controllerGrabbed = tracker.wasGrabbedByController;
+        sample.interactionUsed = tracker.isUsed;
         sample.hitPoint = hitPoint;
         sample.hitDistance = hitDistance;
         UpdateGazeDebugVisuals(gazeRay, hitPoint);
@@ -579,10 +786,87 @@ public class CameraPoseSender : MonoBehaviour
         accumulator.hitSampleCount++;
         accumulator.totalDwellSeconds += recordInterval;
         accumulator.lastSeenTimestamp = sample.timestamp;
+        accumulator.controllerGrabbed = accumulator.controllerGrabbed || tracker.wasGrabbedByController;
+        accumulator.interactionUsed = accumulator.interactionUsed || tracker.isUsed;
         if (string.IsNullOrEmpty(accumulator.firstSeenTimestamp))
         {
             accumulator.firstSeenTimestamp = sample.timestamp;
         }
+    }
+
+    private void UpdateGazeDebugFromCurrentPose()
+    {
+        if (!showGazeDebugMarker && !showGazeDebugRay)
+        {
+            return;
+        }
+
+        if (showGazeDebugOnlyWhileVoiceSampling && !VoiceSamplingActive)
+        {
+            SetGazeDebugVisible(false);
+            return;
+        }
+
+        GazeSample sample = BuildCurrentGazeSample();
+        if (!TryGetGazeRay(sample, out Ray gazeRay, out bool usedHeadFallback))
+        {
+            SetGazeDebugVisible(false);
+            return;
+        }
+
+        Vector3 targetPoint = gazeRay.origin + gazeRay.direction.normalized * gazeDebugDefaultDistance;
+        InteractionTracker tracker = RaycastInteractionTracker(gazeRay, out RaycastHit hit);
+        if (tracker != null)
+        {
+            targetPoint = hit.point;
+        }
+        else
+        {
+            tracker = FindInteractionTrackerNearRay(gazeRay, out Vector3 nearPoint, out _);
+            if (tracker != null)
+            {
+                targetPoint = nearPoint;
+            }
+        }
+
+        if (!usedHeadFallback && !IsWorldPointVisibleToMainCamera(targetPoint))
+        {
+            if (TryGetHeadForwardDebugRay(out Ray headRay))
+            {
+                gazeRay = headRay;
+                targetPoint = headRay.origin + headRay.direction.normalized * gazeDebugDefaultDistance;
+            }
+        }
+
+        UpdateGazeDebugVisuals(gazeRay, targetPoint);
+    }
+
+    private bool TryGetHeadForwardDebugRay(out Ray headRay)
+    {
+        Transform head = ResolveHeadTransform();
+        if (head != null)
+        {
+            headRay = new Ray(head.position, head.forward);
+            return true;
+        }
+
+        headRay = new Ray();
+        return false;
+    }
+
+    private bool IsWorldPointVisibleToMainCamera(Vector3 worldPoint)
+    {
+        Camera camera = Camera.main;
+        if (camera == null)
+        {
+            Transform head = ResolveHeadTransform();
+            return head == null || Vector3.Dot(head.forward, worldPoint - head.position) > 0f;
+        }
+
+        Vector3 viewportPoint = camera.WorldToViewportPoint(worldPoint);
+        return viewportPoint.z > camera.nearClipPlane &&
+               viewportPoint.x >= 0f && viewportPoint.x <= 1f &&
+               viewportPoint.y >= 0f && viewportPoint.y <= 1f;
     }
 
     private bool TryGetGazeRay(GazeSample sample, out Ray gazeRay, out bool usedHeadFallback)
@@ -648,6 +932,21 @@ public class CameraPoseSender : MonoBehaviour
         return mainCamera != null ? mainCamera.transform : null;
     }
 
+    private Transform ResolveTrackingSpaceTransform()
+    {
+        if (cameraRig != null)
+        {
+            Transform trackingSpace = cameraRig.transform.Find("TrackingSpace");
+            if (trackingSpace != null)
+            {
+                return trackingSpace;
+            }
+        }
+
+        GameObject trackingSpaceObject = GameObject.Find("OVRCameraRig/TrackingSpace");
+        return trackingSpaceObject != null ? trackingSpaceObject.transform : null;
+    }
+
     private InteractionTracker RaycastInteractionTracker(Ray gazeRay, out RaycastHit bestHit)
     {
         RaycastHit[] hits = Physics.RaycastAll(gazeRay, gazeRayMaxDistance, ~0, QueryTriggerInteraction.Collide);
@@ -661,10 +960,351 @@ public class CameraPoseSender : MonoBehaviour
                 bestHit = hit;
                 return tracker;
             }
+
+            tracker = TryGetOrCreateAvatarTracker(hit.collider);
+            if (tracker != null && tracker.isActiveAndEnabled)
+            {
+                bestHit = hit;
+                return tracker;
+            }
         }
 
         bestHit = new RaycastHit();
         return null;
+    }
+
+    private InteractionTracker TryGetOrCreateAvatarTracker(Collider hitCollider)
+    {
+        if (hitCollider == null)
+        {
+            return null;
+        }
+
+        GameObject avatarRoot = ResolveAvatarGazeRoot(hitCollider.gameObject);
+        if (avatarRoot == null)
+        {
+            return null;
+        }
+
+        InteractionTracker tracker = avatarRoot.GetComponent<InteractionTracker>();
+        if (tracker == null)
+        {
+            tracker = avatarRoot.AddComponent<InteractionTracker>();
+            tracker.displayName = "Avatar/Social Agent";
+            Debug.Log("[Gaze] Added InteractionTracker to avatar/person object: " + avatarRoot.name);
+        }
+        else if (string.IsNullOrWhiteSpace(tracker.displayName))
+        {
+            tracker.displayName = "Avatar/Social Agent";
+        }
+
+        return tracker;
+    }
+
+    private int AttachAvatarGazeTargets()
+    {
+        var seenObjects = new HashSet<GameObject>();
+        int attachedCount = 0;
+
+        Renderer[] renderers = FindObjectsByType<Renderer>(FindObjectsSortMode.None);
+        foreach (Renderer renderer in renderers)
+        {
+            if (renderer == null || !renderer.enabled || !renderer.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            GameObject avatarRoot = ResolveAvatarGazeRoot(renderer.gameObject);
+            if (AttachAvatarGazeTarget(avatarRoot, seenObjects))
+            {
+                attachedCount++;
+            }
+        }
+
+        Animator[] animators = FindObjectsByType<Animator>(FindObjectsSortMode.None);
+        foreach (Animator animator in animators)
+        {
+            if (animator == null || !animator.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            GameObject avatarRoot = animator.isHuman ? animator.gameObject : ResolveAvatarGazeRoot(animator.gameObject);
+            if (AttachAvatarGazeTarget(avatarRoot, seenObjects))
+            {
+                attachedCount++;
+            }
+        }
+
+        return attachedCount;
+    }
+
+    private bool AttachAvatarGazeTarget(GameObject avatarRoot, HashSet<GameObject> seenObjects)
+    {
+        if (avatarRoot == null || seenObjects.Contains(avatarRoot))
+        {
+            return false;
+        }
+
+        seenObjects.Add(avatarRoot);
+        InteractionTracker tracker = avatarRoot.GetComponent<InteractionTracker>();
+        if (tracker == null)
+        {
+            tracker = avatarRoot.AddComponent<InteractionTracker>();
+        }
+
+        tracker.displayName = "Avatar/Social Agent";
+        tracker.attentionOnlyTarget = true;
+        tracker.trackTriggerCollisions = false;
+        EnsureAvatarGazeCollider(avatarRoot);
+        return true;
+    }
+
+    private GameObject ResolveAvatarGazeRoot(GameObject hitObject)
+    {
+        Transform current = hitObject != null ? hitObject.transform : null;
+        while (current != null)
+        {
+            if (IsAvatarGazeCandidate(current.gameObject))
+            {
+                return current.gameObject;
+            }
+
+            current = current.parent;
+        }
+
+        return null;
+    }
+
+    private bool IsAvatarGazeCandidate(GameObject candidate)
+    {
+        if (candidate == null || !candidate.activeInHierarchy)
+        {
+            return false;
+        }
+
+        if (candidate.GetComponent<CameraPoseSender>() != null || candidate.GetComponent<VrmeAtticClient>() != null)
+        {
+            return false;
+        }
+
+        string[] hints = ParseCommaSeparatedHints(gazeAvatarObjectNameHints);
+        foreach (string hint in hints)
+        {
+            if (candidate.name.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+        }
+
+        MonoBehaviour[] behaviours = candidate.GetComponentsInChildren<MonoBehaviour>(true);
+        foreach (MonoBehaviour behaviour in behaviours)
+        {
+            if (behaviour == null)
+            {
+                continue;
+            }
+
+            string typeName = behaviour.GetType().Name;
+            if (typeName.IndexOf("FaceCameraOnYAxis", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                typeName.IndexOf("VoiceDrivenAnimator", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                typeName.IndexOf("AudioDrivenBlendShapeMouth", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                typeName.IndexOf("ProceduralAvatarIdle", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void EnsureAvatarGazeCollider(GameObject avatarRoot)
+    {
+        if (avatarRoot == null || avatarRoot.GetComponentInChildren<Collider>() != null)
+        {
+            return;
+        }
+
+        Bounds bounds;
+        if (!TryGetRendererBounds(avatarRoot, out bounds))
+        {
+            bounds = new Bounds(avatarRoot.transform.position + Vector3.up * 0.9f, new Vector3(0.5f, 1.8f, 0.5f));
+        }
+
+        CapsuleCollider collider = avatarRoot.AddComponent<CapsuleCollider>();
+        collider.isTrigger = true;
+        collider.direction = 1;
+        collider.height = Mathf.Max(1.2f, bounds.size.y);
+        collider.radius = Mathf.Clamp(Mathf.Max(bounds.size.x, bounds.size.z) * 0.35f, 0.18f, 0.45f);
+        collider.center = avatarRoot.transform.InverseTransformPoint(bounds.center);
+    }
+
+    private static bool TryGetRendererBounds(GameObject root, out Bounds bounds)
+    {
+        Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+        bounds = new Bounds(root.transform.position, Vector3.zero);
+        bool hasBounds = false;
+        foreach (Renderer renderer in renderers)
+        {
+            if (renderer == null)
+            {
+                continue;
+            }
+
+            if (!hasBounds)
+            {
+                bounds = renderer.bounds;
+                hasBounds = true;
+            }
+            else
+            {
+                bounds.Encapsulate(renderer.bounds);
+            }
+        }
+
+        return hasBounds;
+    }
+
+    private int DisableHandTrackingObjects()
+    {
+        int disabledCount = 0;
+        string[] hints = ParseCommaSeparatedHints(handTrackingObjectNameHints);
+
+        Transform[] transforms = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (Transform transform in transforms)
+        {
+            if (transform == null || transform.gameObject == gameObject)
+            {
+                continue;
+            }
+
+            if (IsHandTrackingObject(transform, hints))
+            {
+                if (transform.gameObject.activeSelf)
+                {
+                    transform.gameObject.SetActive(false);
+                    disabledCount++;
+                }
+            }
+        }
+
+        MonoBehaviour[] behaviours = FindObjectsByType<MonoBehaviour>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (MonoBehaviour behaviour in behaviours)
+        {
+            if (behaviour == null)
+            {
+                continue;
+            }
+
+            string typeName = behaviour.GetType().Name;
+            if (IsHandTrackingTypeName(typeName) && behaviour.enabled)
+            {
+                behaviour.enabled = false;
+                disabledCount++;
+            }
+        }
+
+        return disabledCount;
+    }
+
+    private static bool IsHandTrackingObject(Transform transform, string[] hints)
+    {
+        string objectName = transform.gameObject.name;
+        foreach (string hint in hints)
+        {
+            if (objectName.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+        }
+
+        string path = GetTransformPath(transform);
+        bool isUserRigObject =
+            path.IndexOf("OVR", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            path.IndexOf("XR Origin", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            path.IndexOf("CameraRig", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            path.IndexOf("Interaction", StringComparison.OrdinalIgnoreCase) >= 0;
+
+        if (!isUserRigObject)
+        {
+            return false;
+        }
+
+        return string.Equals(objectName, "LeftHand", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(objectName, "RightHand", StringComparison.OrdinalIgnoreCase) ||
+               objectName.IndexOf("HandVisual", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               objectName.IndexOf("HandRay", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static bool IsHandTrackingTypeName(string typeName)
+    {
+        if (string.IsNullOrWhiteSpace(typeName))
+        {
+            return false;
+        }
+
+        string[] typeHints =
+        {
+            "OVRHand",
+            "OVRSkeleton",
+            "OVRMesh",
+            "HandRayInteractor",
+            "ControllerRayInteractor",
+            "RayInteractor",
+            "HandVisual",
+            "HandGrab",
+            "FromOVRHandDataSource",
+            "FromUnityXRHandDataSource"
+        };
+
+        foreach (string hint in typeHints)
+        {
+            if (typeName.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string GetTransformPath(Transform transform)
+    {
+        if (transform == null)
+        {
+            return "";
+        }
+
+        string path = transform.name;
+        Transform current = transform.parent;
+        while (current != null)
+        {
+            path = current.name + "/" + path;
+            current = current.parent;
+        }
+
+        return path;
+    }
+
+    private static string[] ParseCommaSeparatedHints(string hintList)
+    {
+        if (string.IsNullOrWhiteSpace(hintList))
+        {
+            return Array.Empty<string>();
+        }
+
+        string[] rawHints = hintList.Split(',');
+        var hints = new List<string>();
+        foreach (string rawHint in rawHints)
+        {
+            string hint = rawHint.Trim();
+            if (!string.IsNullOrWhiteSpace(hint))
+            {
+                hints.Add(hint);
+            }
+        }
+
+        return hints.ToArray();
     }
 
     private InteractionTracker FindInteractionTrackerNearRay(Ray gazeRay, out Vector3 bestPoint, out float bestDistance)
@@ -758,8 +1398,8 @@ public class CameraPoseSender : MonoBehaviour
             GameObject rayObject = new GameObject("VRME Gaze Debug Ray");
             gazeDebugRay = rayObject.AddComponent<LineRenderer>();
             gazeDebugRay.positionCount = 2;
-            gazeDebugRay.startWidth = 0.012f;
-            gazeDebugRay.endWidth = 0.004f;
+            gazeDebugRay.startWidth = 0.004f;
+            gazeDebugRay.endWidth = 0.0015f;
             gazeDebugRay.useWorldSpace = true;
             gazeDebugRay.material = CreateGazeDebugMaterial();
         }
@@ -777,6 +1417,9 @@ public class CameraPoseSender : MonoBehaviour
 
         Material material = new Material(shader);
         material.color = gazeDebugColor;
+        material.SetInt("_ZTest", (int)UnityEngine.Rendering.CompareFunction.Always);
+        material.SetInt("_ZWrite", 0);
+        material.renderQueue = 5000;
         if (material.HasProperty("_EmissionColor"))
         {
             material.SetColor("_EmissionColor", gazeDebugColor);
@@ -893,6 +1536,9 @@ public class CameraPoseSender : MonoBehaviour
                 objectName = accumulator.objectName,
                 displayName = accumulator.displayName,
                 wasSeen = accumulator.hitSampleCount > 0,
+                attentionOnly = true,
+                controllerGrabbed = accumulator.controllerGrabbed,
+                interactionUsed = accumulator.interactionUsed,
                 attendedLongEnough = accumulator.maxContinuousDwellSeconds >= gazeLongAttentionThresholdSeconds,
                 hitSampleCount = accumulator.hitSampleCount,
                 fixationCount = accumulator.fixationCount,
@@ -910,6 +1556,8 @@ public class CameraPoseSender : MonoBehaviour
     {
         public string objectName;
         public string displayName;
+        public bool controllerGrabbed;
+        public bool interactionUsed;
         public int hitSampleCount;
         public int fixationCount;
         public float totalDwellSeconds;
@@ -1084,7 +1732,24 @@ public class CameraPoseSender : MonoBehaviour
             {
                 loginId = PlayerData.loginId, 
                 participantId = PlayerData.participantId, 
+                sessionId = PlayerData.sessionId,
+                avatarCondition = PlayerData.avatarCondition,
                 sceneName = SceneManager.GetActiveScene().name,
+                sceneIndex = PlayerData.currentSceneIndex,
+                sceneSequenceLength = PlayerData.sceneSequence != null ? PlayerData.sceneSequence.Length : 0,
+                startedAtUtc = recordingStartedAtUtc,
+                endedAtUtc = System.DateTime.UtcNow.ToString("o"),
+                sampleOnlyWhileVoiceRecording = sampleOnlyWhileVoiceRecording,
+                sampleOnVoiceRecordingEdges = sampleOnVoiceRecordingEdges,
+                recordEyeGaze = recordEyeGaze,
+                recordGazeObjectAttention = recordGazeObjectAttention,
+                useHeadForwardAsGazeFallback = useHeadForwardAsGazeFallback,
+                recordFaceExpressions = recordFaceExpressions,
+                recordHeartRatePlaceholder = recordHeartRatePlaceholder,
+                gazeConfidenceThreshold = gazeConfidenceThreshold,
+                gazeRayMaxDistance = gazeRayMaxDistance,
+                gazeNearRayAngleDegrees = gazeNearRayAngleDegrees,
+                gazeLongAttentionThresholdSeconds = gazeLongAttentionThresholdSeconds,
                 cameraPoses = new List<CameraPose>(bufferedPoses), // Use a copy of the list
                 gazeSamples = new List<GazeSample>(bufferedGazeSamples),
                 gazeObjectSummaries = BuildGazeObjectSummaries(),
@@ -1124,7 +1789,24 @@ public class CameraPoseSender : MonoBehaviour
             {
                 loginId = PlayerData.loginId,  // Replace with your actual login ID
                 participantId = PlayerData.participantId,  // Replace with your actual participant ID
+                sessionId = PlayerData.sessionId,
+                avatarCondition = PlayerData.avatarCondition,
                 sceneName = SceneManager.GetActiveScene().name,
+                sceneIndex = PlayerData.currentSceneIndex,
+                sceneSequenceLength = PlayerData.sceneSequence != null ? PlayerData.sceneSequence.Length : 0,
+                startedAtUtc = recordingStartedAtUtc,
+                endedAtUtc = System.DateTime.UtcNow.ToString("o"),
+                sampleOnlyWhileVoiceRecording = sampleOnlyWhileVoiceRecording,
+                sampleOnVoiceRecordingEdges = sampleOnVoiceRecordingEdges,
+                recordEyeGaze = recordEyeGaze,
+                recordGazeObjectAttention = recordGazeObjectAttention,
+                useHeadForwardAsGazeFallback = useHeadForwardAsGazeFallback,
+                recordFaceExpressions = recordFaceExpressions,
+                recordHeartRatePlaceholder = recordHeartRatePlaceholder,
+                gazeConfidenceThreshold = gazeConfidenceThreshold,
+                gazeRayMaxDistance = gazeRayMaxDistance,
+                gazeNearRayAngleDegrees = gazeNearRayAngleDegrees,
+                gazeLongAttentionThresholdSeconds = gazeLongAttentionThresholdSeconds,
                 cameraPoses = bufferedPoses,
                 gazeSamples = bufferedGazeSamples,
                 gazeObjectSummaries = BuildGazeObjectSummaries(),

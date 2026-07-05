@@ -80,6 +80,10 @@ public static class VRMERocketboxPrefabBuilder
         VrmeAtticClient client = root.AddComponent<VrmeAtticClient>();
         client.serverUrl = "ws://localhost:8080/";
         client.recordKey = KeyCode.V;
+        client.enableKeyboardRecordKey = true;
+        client.enableControllerRecordButton = true;
+        client.recordControllerButton = OVRInput.Button.One;
+        client.recordController = OVRInput.Controller.RTouch;
         client.sampleRate = 16000;
         client.maxRecordSeconds = 12;
         client.autoConnectOnStart = true;
@@ -101,6 +105,8 @@ public static class VRMERocketboxPrefabBuilder
         FaceCameraOnYAxis faceCamera = root.AddComponent<FaceCameraOnYAxis>();
         faceCamera.turnSpeed = 720f;
         faceCamera.yawOffsetDegrees = 0f;
+
+        root.AddComponent<AvatarGroundAligner>();
 
         AudioDrivenBlendShapeMouth mouth = root.AddComponent<AudioDrivenBlendShapeMouth>();
         mouth.audioSource = audioSource;

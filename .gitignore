@@ -18,6 +18,10 @@ unity/[Bb]uilds/
 unity/[Ll]ogs/
 unity/[Uu]ser[Ss]ettings/
 *.log
+.idea/
+conversation_events.jsonl
+latency_events.jsonl
+unity/Assets/Unity.VisualScripting.Generated/
 
 # VRME local server secrets and generated audio
 vrme_vibevoice_pack/.env

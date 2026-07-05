@@ -150,7 +150,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   realSceneBuildIndex: 7
   endSceneBuildIndex: 8
-  realSceneWaitTime: 60
+  realSceneWaitTime: 10
 --- !u!4 &378699091
 Transform:
   m_ObjectHideFlags: 0

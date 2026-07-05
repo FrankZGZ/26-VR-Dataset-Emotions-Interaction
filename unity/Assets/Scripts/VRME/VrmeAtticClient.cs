@@ -13,6 +13,10 @@ public class VrmeAtticClient : MonoBehaviour
 {
     public string serverUrl = "ws://localhost:8080/";
     public KeyCode recordKey = KeyCode.V;
+    public bool enableKeyboardRecordKey = true;
+    public bool enableControllerRecordButton = true;
+    public OVRInput.Button recordControllerButton = OVRInput.Button.One;
+    public OVRInput.Controller recordController = OVRInput.Controller.RTouch;
     public int sampleRate = 16000;
     public int maxRecordSeconds = 12;
     public bool autoConnectOnStart = true;
@@ -23,10 +27,14 @@ public class VrmeAtticClient : MonoBehaviour
     public bool includeInteractionContext = true;
     public bool autoFindInteractionTrackers = true;
     public InteractionTracker[] keyInteractables = Array.Empty<InteractionTracker>();
-    public bool autoAttachInteractionTrackersToSceneObjects = true;
-    public bool autoDiscoverSceneObjectsForContext = true;
+    public bool autoAttachInteractionTrackersToSceneObjects = false;
+    public bool autoAttachAvatarAttentionTracker = true;
+    public bool autoDiscoverSceneObjectsForContext = false;
+    public bool sendLiveContextOnlyForVoiceTurn = true;
     [Tooltip("Comma-separated object name hints used when InteractionTracker components are not present.")]
     public string sceneObjectNameHints = "HandTorch,Flashlight,Torch,Airplane,Plane,Stone,Rock,Banana,Fruit,Elephant,Dog,Puppy,Ball,Baseball,Book,Cup,Telescope,ManScreaming,Man,Gun,Sign,Door,Handle,Bar,Key,Switch,Button,Lever,Panel,Light,Exit";
+    [Tooltip("Comma-separated object/script name hints used to mark the conversational avatar as a social attention target.")]
+    public string avatarObjectNameHints = "Rocketbox,Female_Adult,Male_Adult,ReadyPlayerMe,DigitalHuman,SocialAgent,Companion,Avatar,Character,Person,Human,NPC,Man,Woman,ManScreaming";
     [Range(1, 40)] public int maxDiscoveredSceneObjects = 20;
     [Range(1f, 100f)] public float maxContextObjectDistance = 25f;
     public Transform playerTransform;
@@ -34,14 +42,17 @@ public class VrmeAtticClient : MonoBehaviour
     public AudioSource playbackAudioSource;
     [Range(0.1f, 5f)] public float replyGain = 2.2f;
     public bool streamReplyAudio = true;
-    [Range(0.05f, 1f)] public float streamStartBufferSeconds = 0.18f;
+    [Tooltip("Unity no longer controls personality. The backend .env ELEVENLABS_TONE_PRESET selects warm/dom/observer.")]
+    public string avatarCondition = "backend";
+    [Range(0.02f, 1f)] public float streamStartBufferSeconds = 0.08f;
     [Range(5, 120)] public int streamMaxSeconds = 45;
     public bool autoIntroOnStart = false;
-    [Range(0f, 60f)] public float autoIntroDelaySeconds = 10f;
+    [Range(0f, 60f)] public float autoIntroDelaySeconds = 3f;
     [TextArea(3, 8)] public string autoIntroPrompt =
         "Please introduce this VR scene to the participant. Describe the current environment, explain which interaction states or constraints are relevant, and state the task they should focus on. Keep it calm, clear, and complete without ending abruptly.";
 
     private readonly ConcurrentQueue<Action> mainThreadActions = new ConcurrentQueue<Action>();
+    private readonly ConcurrentQueue<byte[]> pendingAudioTurns = new ConcurrentQueue<byte[]>();
     private ClientWebSocket websocket;
     private CancellationTokenSource cancellation;
     private Task connectTask;
@@ -61,13 +72,24 @@ public class VrmeAtticClient : MonoBehaviour
             audioSource = gameObject.AddComponent<AudioSource>();
         }
         streamingPlayer = new StreamingPcmPlayer();
+        PlayerData.avatarCondition = "backend";
 
-        Debug.Log("[VRME] Client started. recordKey=" + recordKey + ", microphones=" + Microphone.devices.Length);
+        Debug.Log("[VRME] Client started. recordKey=" + (enableKeyboardRecordKey ? recordKey.ToString() : "disabled") +
+            ", controllerRecordButton=" + (enableControllerRecordButton ? recordController + "/" + recordControllerButton : "disabled") +
+            ", microphones=" + Microphone.devices.Length +
+            ", sessionId=" + PlayerData.sessionId +
+            ", avatarCondition=backend-controlled");
 
         if (autoAttachInteractionTrackersToSceneObjects)
         {
             int attachedCount = AttachTrackersToSceneObjects();
             Debug.Log("[VRME] Auto-attached InteractionTracker to " + attachedCount + " scene objects.");
+        }
+
+        if (autoAttachAvatarAttentionTracker)
+        {
+            int avatarTrackerCount = AttachAvatarAttentionTrackers();
+            Debug.Log("[VRME] Auto-attached avatar attention tracker to " + avatarTrackerCount + " avatar objects.");
         }
 
         if (showRuntimeMarker)
@@ -93,23 +115,28 @@ public class VrmeAtticClient : MonoBehaviour
             action.Invoke();
         }
 
-        bool recordKeyIsDown = Input.GetKey(recordKey);
-        if (recordKeyIsDown && !recordKeyWasDown)
+        bool recordInputIsDown = IsRecordInputDown();
+        if (recordInputIsDown && !recordKeyWasDown)
         {
             StartRecording();
         }
 
-        if (!recordKeyIsDown && recordKeyWasDown)
+        if (!recordInputIsDown && recordKeyWasDown)
         {
             StopRecordingAndSend();
         }
 
-        recordKeyWasDown = recordKeyIsDown;
+        recordKeyWasDown = recordInputIsDown;
         streamingPlayer?.Update();
     }
 
     private void OnGUI()
     {
+        if (!enableKeyboardRecordKey)
+        {
+            return;
+        }
+
         Event currentEvent = Event.current;
         if (currentEvent == null || currentEvent.keyCode != recordKey)
         {
@@ -126,6 +153,16 @@ public class VrmeAtticClient : MonoBehaviour
             recordKeyWasDown = false;
             StopRecordingAndSend();
         }
+    }
+
+    private bool IsRecordInputDown()
+    {
+        if (enableControllerRecordButton && OVRInput.Get(recordControllerButton, recordController))
+        {
+            return true;
+        }
+
+        return enableKeyboardRecordKey && Input.GetKey(recordKey);
     }
 
     private void CreateRuntimeMarker()
@@ -161,6 +198,11 @@ public class VrmeAtticClient : MonoBehaviour
         if (websocket != null && websocket.State == WebSocketState.Open)
         {
             return Task.CompletedTask;
+        }
+
+        if (websocket != null && websocket.State != WebSocketState.None)
+        {
+            ResetWebSocket();
         }
 
         if (connectTask != null && !connectTask.IsCompleted)
@@ -200,6 +242,23 @@ public class VrmeAtticClient : MonoBehaviour
         }
     }
 
+    private void ResetWebSocket()
+    {
+        try
+        {
+            websocket?.Dispose();
+        }
+        catch
+        {
+            // Ignore cleanup races; a fresh connection will be created on the next voice turn.
+        }
+        finally
+        {
+            websocket = null;
+            connectTask = null;
+        }
+    }
+
     private async Task SendConfigAsync()
     {
         if (websocket == null || websocket.State != WebSocketState.Open)
@@ -207,9 +266,15 @@ public class VrmeAtticClient : MonoBehaviour
             return;
         }
 
-        string sceneContext = BuildSceneContext();
+        string sceneContext = sendLiveContextOnlyForVoiceTurn ? "" : BuildSceneContext();
         string json =
             "{\"type\":\"config\",\"streamReplyAudio\":" + (streamReplyAudio ? "true" : "false") +
+            ",\"participantId\":\"" + EscapeJson(PlayerData.participantId) +
+            "\",\"loginId\":\"" + EscapeJson(PlayerData.loginId) +
+            "\",\"sessionId\":\"" + EscapeJson(PlayerData.sessionId) +
+            "\",\"avatarCondition\":\"" + EscapeJson(PlayerData.avatarCondition) +
+            "\",\"sceneName\":\"" + EscapeJson(SceneManager.GetActiveScene().name) +
+            "\",\"sceneIndex\":" + PlayerData.currentSceneIndex +
             ",\"scenePrompt\":\"" + EscapeJson(scenePrompt) +
             "\",\"sceneContext\":\"" + EscapeJson(sceneContext) + "\"}";
         byte[] payload = System.Text.Encoding.UTF8.GetBytes(json);
@@ -219,6 +284,38 @@ public class VrmeAtticClient : MonoBehaviour
             true,
             cancellation.Token);
         Debug.Log("[VRME] Sent scene config. contextChars=" + sceneContext.Length + " preview=" + PreviewForLog(sceneContext, 1400));
+    }
+
+    private async Task SendTurnContextAsync()
+    {
+        if (websocket == null || websocket.State != WebSocketState.Open)
+        {
+            return;
+        }
+
+        string turnContext = CameraPoseSender.LatestVoiceRuntimeContextText;
+        if (!sendLiveContextOnlyForVoiceTurn && includeInteractionContext)
+        {
+            string sceneContext = BuildSceneContext();
+            turnContext = turnContext + "\nsceneSnapshot=" + OneLineContext(sceneContext);
+        }
+
+        string json =
+            "{\"type\":\"turn_context\"" +
+            ",\"participantId\":\"" + EscapeJson(PlayerData.participantId) +
+            "\",\"loginId\":\"" + EscapeJson(PlayerData.loginId) +
+            "\",\"sessionId\":\"" + EscapeJson(PlayerData.sessionId) +
+            "\",\"avatarCondition\":\"" + EscapeJson(PlayerData.avatarCondition) +
+            "\",\"sceneName\":\"" + EscapeJson(SceneManager.GetActiveScene().name) +
+            "\",\"sceneIndex\":" + PlayerData.currentSceneIndex +
+            ",\"sceneContext\":\"" + EscapeJson(turnContext) + "\"}";
+        byte[] payload = System.Text.Encoding.UTF8.GetBytes(json);
+        await websocket.SendAsync(
+            new ArraySegment<byte>(payload),
+            WebSocketMessageType.Text,
+            true,
+            cancellation.Token);
+        Debug.Log("[VRME] Sent voice-turn context. chars=" + turnContext.Length + " preview=" + PreviewForLog(turnContext, 900));
     }
 
     private static string EscapeJson(string value)
@@ -238,7 +335,7 @@ public class VrmeAtticClient : MonoBehaviour
 
     private void StartRecording()
     {
-        if (isRecording || isSending)
+        if (isRecording)
         {
             return;
         }
@@ -249,10 +346,26 @@ public class VrmeAtticClient : MonoBehaviour
             return;
         }
 
+        streamingPlayer?.Reset();
+        if (audioSource != null && audioSource.isPlaying)
+        {
+            audioSource.Stop();
+        }
+
         recordingClip = Microphone.Start(null, false, maxRecordSeconds, sampleRate);
         isRecording = true;
         CameraPoseSender.BeginVoiceSampling();
-        Debug.Log("[VRME] Recording started. Release " + recordKey + " to send.");
+        Debug.Log("[VRME] Recording started. Release " + GetRecordInputLabel() + " to send." + (isSending ? " Current reply is still finishing; this turn will queue." : ""));
+    }
+
+    private string GetRecordInputLabel()
+    {
+        if (enableControllerRecordButton)
+        {
+            return recordController + "/" + recordControllerButton;
+        }
+
+        return recordKey.ToString();
     }
 
     private async void StopRecordingAndSend()
@@ -333,6 +446,8 @@ public class VrmeAtticClient : MonoBehaviour
     {
         if (isSending)
         {
+            pendingAudioTurns.Enqueue(wavBytes);
+            Debug.Log("[VRME] Queued voice turn while previous reply is still active. pending=" + pendingAudioTurns.Count);
             return;
         }
 
@@ -347,6 +462,7 @@ public class VrmeAtticClient : MonoBehaviour
             }
 
             await SendConfigAsync();
+            await SendTurnContextAsync();
 
             await websocket.SendAsync(
                 new ArraySegment<byte>(wavBytes),
@@ -360,10 +476,16 @@ public class VrmeAtticClient : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogWarning("[VRME] Send failed: " + ex.Message);
+            ResetWebSocket();
         }
         finally
         {
             isSending = false;
+            if (pendingAudioTurns.TryDequeue(out byte[] nextWavBytes))
+            {
+                Debug.Log("[VRME] Sending queued voice turn. remaining=" + pendingAudioTurns.Count);
+                _ = SendAudioAsync(nextWavBytes);
+            }
         }
     }
 
@@ -377,29 +499,12 @@ public class VrmeAtticClient : MonoBehaviour
         Transform player = ResolvePlayerTransform();
         Vector3 playerPosition = player != null ? player.position : Vector3.zero;
         InteractionTracker[] trackers = ResolveInteractionTrackers();
-        List<SceneContextObject> discoveredObjects = DiscoverSceneContextObjects(trackers, playerPosition, player != null);
 
         using (var writer = new StringWriter())
         {
             writer.WriteLine("Scene: " + SceneManager.GetActiveScene().name);
             writer.WriteLine("Latest user head and gaze state:");
             writer.WriteLine(CameraPoseSender.LatestRuntimeContextText);
-
-            string flashlightContext = BuildFlashlightContext(playerPosition, player != null);
-            writer.WriteLine("High-priority scene cues:");
-            writer.WriteLine("- Use the gaze/head state above first; if hitName names an object, treat it as the user's current attention target.");
-            writer.WriteLine("- If attendedObjects lists an object with attendedLongEnough=True, treat it as an important object the user looked at during this voice turn even if the latest hit is false.");
-            writer.WriteLine("- Flashlight: " + OneLineContext(flashlightContext));
-            writer.WriteLine("- Closest interaction objects: " + BuildClosestInteractionObjectSummary(trackers, discoveredObjects, playerPosition, player != null));
-
-            if (player != null)
-            {
-                writer.WriteLine("Player position: " + FormatVector(playerPosition));
-            }
-            else
-            {
-                writer.WriteLine("Player position: unknown");
-            }
 
             writer.WriteLine("Key interactable objects:");
             if (trackers.Length == 0)
@@ -418,32 +523,9 @@ public class VrmeAtticClient : MonoBehaviour
                         continue;
                     }
 
-                    string distance = player != null
-                        ? Vector3.Distance(playerPosition, objectPosition).ToString("0.00")
-                        : "unknown";
-                    writer.WriteLine("- " + tracker.ContextName + " | used=" + tracker.isUsed + " | position=" + FormatVector(objectPosition) + " | distanceToPlayer=" + distance);
+                    writer.WriteLine("- " + tracker.ContextName + " | interactionState={" + tracker.InteractionStateSummary + "}");
                 }
             }
-
-            writer.WriteLine("Nearby scene objects found by name/collider:");
-            if (discoveredObjects.Count == 0)
-            {
-                writer.WriteLine("- none");
-            }
-            else
-            {
-                foreach (SceneContextObject sceneObject in discoveredObjects)
-                {
-                    string distance = sceneObject.hasDistance ? sceneObject.distanceToPlayer.ToString("0.00") : "unknown";
-                    writer.WriteLine("- " + sceneObject.name + " | position=" + FormatVector(sceneObject.position) + " | distanceToPlayer=" + distance);
-                }
-            }
-
-            writer.WriteLine("Flashlight state:");
-            writer.WriteLine(flashlightContext);
-
-            writer.WriteLine("Scripted interaction references:");
-            writer.WriteLine(BuildScriptedInteractionReferenceContext(playerPosition, player != null));
 
             writer.WriteLine("Recent interaction events:");
             writer.WriteLine(InteractionTracker.GetRecentEventsText(maxRecentInteractionEvents));
@@ -466,7 +548,7 @@ public class VrmeAtticClient : MonoBehaviour
                 float distance = Vector3.Distance(playerPosition, tracker.transform.position);
                 if (distance <= maxContextObjectDistance)
                 {
-                    summaries.Add(tracker.ContextName + " " + distance.ToString("0.0") + "m used=" + tracker.isUsed);
+                    summaries.Add(tracker.ContextName + " " + distance.ToString("0.0") + "m interactionState={" + tracker.InteractionStateSummary + "}");
                 }
             }
         }
@@ -740,14 +822,172 @@ public class VrmeAtticClient : MonoBehaviour
         return attachedCount;
     }
 
+    private int AttachAvatarAttentionTrackers()
+    {
+        string[] hints = ParseCommaSeparatedHints(avatarObjectNameHints);
+        if (hints.Length == 0)
+        {
+            return 0;
+        }
+
+        int attachedCount = 0;
+        var seenObjects = new HashSet<GameObject>();
+        MonoBehaviour[] behaviours = FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None);
+        foreach (MonoBehaviour behaviour in behaviours)
+        {
+            if (behaviour == null || !behaviour.isActiveAndEnabled)
+            {
+                continue;
+            }
+
+            GameObject candidate = ResolveAvatarAttentionRoot(behaviour.gameObject, hints);
+            if (candidate == null || seenObjects.Contains(candidate))
+            {
+                continue;
+            }
+
+            seenObjects.Add(candidate);
+            InteractionTracker tracker = candidate.GetComponent<InteractionTracker>();
+            if (tracker == null)
+            {
+                tracker = candidate.AddComponent<InteractionTracker>();
+                attachedCount++;
+            }
+
+            tracker.displayName = "Avatar/Social Agent";
+            tracker.attentionOnlyTarget = true;
+            tracker.trackTriggerCollisions = false;
+            EnsureAvatarAttentionCollider(candidate);
+        }
+
+        return attachedCount;
+    }
+
+    private GameObject ResolveAvatarAttentionRoot(GameObject sourceObject, string[] hints)
+    {
+        if (sourceObject == null)
+        {
+            return null;
+        }
+
+        if (IsAvatarAttentionCandidate(sourceObject, hints))
+        {
+            return sourceObject;
+        }
+
+        Transform current = sourceObject.transform.parent;
+        while (current != null)
+        {
+            if (IsAvatarAttentionCandidate(current.gameObject, hints))
+            {
+                return current.gameObject;
+            }
+
+            current = current.parent;
+        }
+
+        return null;
+    }
+
+    private bool IsAvatarAttentionCandidate(GameObject candidate, string[] hints)
+    {
+        if (candidate == null || !candidate.activeInHierarchy)
+        {
+            return false;
+        }
+
+        if (candidate.GetComponent<VrmeAtticClient>() != null || candidate.GetComponent<CameraPoseSender>() != null)
+        {
+            return false;
+        }
+
+        string candidateName = candidate.name;
+        if (MatchesSceneObjectHint(candidateName, hints))
+        {
+            return true;
+        }
+
+        MonoBehaviour[] behaviours = candidate.GetComponentsInChildren<MonoBehaviour>(true);
+        foreach (MonoBehaviour behaviour in behaviours)
+        {
+            if (behaviour == null)
+            {
+                continue;
+            }
+
+            string typeName = behaviour.GetType().Name;
+            if (typeName.IndexOf("FaceCameraOnYAxis", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                typeName.IndexOf("VoiceDrivenAnimator", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                typeName.IndexOf("AudioDrivenBlendShapeMouth", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                typeName.IndexOf("ProceduralAvatarIdle", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void EnsureAvatarAttentionCollider(GameObject avatarRoot)
+    {
+        if (avatarRoot == null || avatarRoot.GetComponent<Collider>() != null)
+        {
+            return;
+        }
+
+        Bounds bounds;
+        if (!TryGetRendererBounds(avatarRoot, out bounds))
+        {
+            bounds = new Bounds(avatarRoot.transform.position + Vector3.up * 0.9f, new Vector3(0.5f, 1.8f, 0.5f));
+        }
+
+        CapsuleCollider collider = avatarRoot.AddComponent<CapsuleCollider>();
+        collider.isTrigger = true;
+        collider.direction = 1;
+        collider.height = Mathf.Max(1.2f, bounds.size.y);
+        collider.radius = Mathf.Clamp(Mathf.Max(bounds.size.x, bounds.size.z) * 0.35f, 0.18f, 0.45f);
+        collider.center = avatarRoot.transform.InverseTransformPoint(bounds.center);
+    }
+
+    private static bool TryGetRendererBounds(GameObject root, out Bounds bounds)
+    {
+        Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+        bounds = new Bounds(root.transform.position, Vector3.zero);
+        bool hasBounds = false;
+        foreach (Renderer renderer in renderers)
+        {
+            if (renderer == null)
+            {
+                continue;
+            }
+
+            if (!hasBounds)
+            {
+                bounds = renderer.bounds;
+                hasBounds = true;
+            }
+            else
+            {
+                bounds.Encapsulate(renderer.bounds);
+            }
+        }
+
+        return hasBounds;
+    }
+
     private string[] ParseSceneObjectHints()
     {
-        if (string.IsNullOrWhiteSpace(sceneObjectNameHints))
+        return ParseCommaSeparatedHints(sceneObjectNameHints);
+    }
+
+    private static string[] ParseCommaSeparatedHints(string hintList)
+    {
+        if (string.IsNullOrWhiteSpace(hintList))
         {
             return Array.Empty<string>();
         }
 
-        string[] rawHints = sceneObjectNameHints.Split(',');
+        string[] rawHints = hintList.Split(',');
         var hints = new List<string>();
         foreach (string rawHint in rawHints)
         {
@@ -996,7 +1236,8 @@ public class VrmeAtticClient : MonoBehaviour
                     result = await websocket.ReceiveAsync(new ArraySegment<byte>(buffer), cancellation.Token);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        Debug.LogWarning("[VRME] Server closed the WebSocket.");
+                        Debug.LogWarning("[VRME] WebSocket closed after this reply. The next voice turn will reconnect automatically.");
+                        ResetWebSocket();
                         return;
                     }
 
@@ -1023,7 +1264,7 @@ public class VrmeAtticClient : MonoBehaviour
                 if (text.Contains("\"audio_stream_end\""))
                 {
                     mainThreadActions.Enqueue(EndPcmStream);
-                    Debug.Log("[VRME] Audio stream ended.");
+                    Debug.Log("[VRME] Audio stream ended. WebSocket remains available for the next voice turn if the server keeps it open.");
                     return;
                 }
 

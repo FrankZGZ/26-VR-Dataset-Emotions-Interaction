@@ -38,6 +38,8 @@ public class FinishStudy : MonoBehaviour
         FinishStudyModel finishStudyModel = new FinishStudyModel();
         finishStudyModel.participantId = participantId;
         finishStudyModel.loginId = loginId;
+        finishStudyModel.sessionId = PlayerData.sessionId;
+        finishStudyModel.avatarCondition = PlayerData.avatarCondition;
         finishStudyModel.timestampUtcUnixMs = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
         // Post to the server.

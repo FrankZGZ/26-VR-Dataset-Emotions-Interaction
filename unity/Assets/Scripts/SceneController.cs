@@ -26,6 +26,7 @@ public class SceneController : MonoBehaviour
 
     // Scene status.
     private bool sceneConditionsMet = false;
+    public bool SceneConditionsMet => sceneConditionsMet;
 
     // Start is called before the first frame update
     void Start()

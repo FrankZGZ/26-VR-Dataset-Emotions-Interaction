@@ -46,7 +46,7 @@ WINDOWS_TTS_FIRST = os.environ.get("WINDOWS_TTS_FIRST", "1").strip().lower() in 
 SEND_TEST_WAV_FIRST = os.environ.get("SEND_TEST_WAV_FIRST", "1").strip().lower() in ("1", "true", "yes", "on")
 WINDOWS_TTS_FALLBACK = os.environ.get("WINDOWS_TTS_FALLBACK", "1").strip().lower() in ("1", "true", "yes", "on")
 
-TTS_PROVIDER = os.environ.get("TTS_PROVIDER", "gemini").strip().lower()
+TTS_PROVIDER = os.environ.get("TTS_PROVIDER", "elevenlabs").strip().lower()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 GEMINI_TTS_ENABLED = os.environ.get("GEMINI_TTS_ENABLED", "1").strip().lower() in ("1", "true", "yes", "on")
 GEMINI_TTS_MODEL = os.environ.get("GEMINI_TTS_MODEL", "gemini-3.1-flash-tts-preview")
@@ -63,66 +63,98 @@ ELEVENLABS_OUTPUT_FORMAT = os.environ.get("ELEVENLABS_OUTPUT_FORMAT", "pcm_24000
 ELEVENLABS_TIMEOUT_SECONDS = int(os.environ.get("ELEVENLABS_TIMEOUT_SECONDS", "45"))
 ELEVENLABS_ENABLED = os.environ.get("ELEVENLABS_ENABLED", "1").strip().lower() in ("1", "true", "yes", "on")
 ELEVENLABS_STREAMING_ENABLED = os.environ.get("ELEVENLABS_STREAMING_ENABLED", "1").strip().lower() in ("1", "true", "yes", "on")
-ELEVENLABS_STREAM_CHUNK_BYTES = int(os.environ.get("ELEVENLABS_STREAM_CHUNK_BYTES", "4096"))
-ELEVENLABS_OPTIMIZE_STREAMING_LATENCY = os.environ.get("ELEVENLABS_OPTIMIZE_STREAMING_LATENCY", "3").strip()
-ELEVENLABS_STREAM_END_SILENCE_MS = int(os.environ.get("ELEVENLABS_STREAM_END_SILENCE_MS", "900"))
-ELEVENLABS_TONE_PRESET = os.environ.get("ELEVENLABS_TONE_PRESET", "detached_observer").strip().lower()
+ELEVENLABS_STREAM_CHUNK_BYTES = int(os.environ.get("ELEVENLABS_STREAM_CHUNK_BYTES", "2048"))
+ELEVENLABS_OPTIMIZE_STREAMING_LATENCY = os.environ.get("ELEVENLABS_OPTIMIZE_STREAMING_LATENCY", "4").strip()
+ELEVENLABS_STREAM_END_SILENCE_MS = int(os.environ.get("ELEVENLABS_STREAM_END_SILENCE_MS", "450"))
+ELEVENLABS_TONE_PRESET = os.environ.get("ELEVENLABS_TONE_PRESET", "warm").strip().lower()
 ELEVENLABS_MANUAL_VOICE_SETTINGS = os.environ.get("ELEVENLABS_MANUAL_VOICE_SETTINGS", "0").strip().lower() in ("1", "true", "yes", "on")
 ELEVENLABS_USE_SPEAKER_BOOST = os.environ.get("ELEVENLABS_USE_SPEAKER_BOOST", "1").strip().lower() in ("1", "true", "yes", "on")
 
 ELEVENLABS_TONE_PRESETS = {
+    "warm": {
+        "stability": 0.65,
+        "similarity_boost": 0.78,
+        "style": 0.35,
+        "speed": 1.00,
+        "prompt": (
+            "Adopt the WARM avatar personality condition. "
+            "Big Five trait embedding on a 0-4 scale: Extraversion=4, Agreeableness=4, "
+            "Conscientiousness=2, Neuroticism=0, Openness=4. "
+            "Role: a warm, friendly, emotionally supportive VR avatar companion. "
+            "Main behavior: speak gently and reassuringly, validate the user's feelings, "
+            "and invite continued exploration without pressure. You may lightly use the user's "
+            "current gaze, head direction, and recent interaction state to make the response feel aware, "
+            "but do not turn it into detailed navigation or a long instruction. Keep the same functional "
+            "help content as other conditions while changing only the interpersonal delivery style. "
+            "Use short, natural spoken responses suitable for VR. Do not over-explain. "
+            "Do not become directive, controlling, judgmental, or overly clinical."
+        ),
+    },
+    "dominant": {
+        "stability": 0.65,
+        "similarity_boost": 0.78,
+        "style": 0.35,
+        "speed": 1.00,
+        "prompt": (
+            "Adopt the DOMINANT avatar personality condition. "
+            "Big Five trait embedding on a 0-4 scale: Extraversion=4, Agreeableness=0, "
+            "Conscientiousness=2, Neuroticism=2, Openness=3. "
+            "Role: a confident, assertive, task-focused VR avatar assistant. "
+            "Main behavior: speak clearly, take the lead, make firm suggestions, and keep emotional "
+            "reassurance minimal. Use gaze, head direction, nearby objects, and recent interaction state "
+            "to provide concrete, directive guidance when relevant. Keep the same functional help content as other conditions while "
+            "changing only the interpersonal delivery style. "
+            "Use short, natural spoken responses suitable for VR. Sound competent and decisive, "
+            "but do not become rude, hostile, insulting, or aggressive."
+        ),
+    },
     "detached_observer": {
         "stability": 0.90,
         "similarity_boost": 0.78,
         "style": 0.00,
         "speed": 1.00,
         "prompt": (
-            "Adopt the DETACHED OBSERVER condition. Role: low warmth, low scene awareness, and low guidance. "
-            "Scene-context rule: ignore object positions, interaction events, used states, distances, and recent movement unless the user explicitly asks about them. Do not mention what objects are nearby and do not guide exploration. "
-            "Main behavior: be present and respond neutrally only when the user interacts. Keep answers minimal, non-directive, and low-affect. "
-            "Research intent: avatar presence baseline. Typical wording: 'I see.' 'Okay.' 'That is noted.'"
-        ),
-    },
-    "supportive_companion": {
-        "stability": 0.25,
-        "similarity_boost": 0.78,
-        "style": 0.90,
-        "speed": 0.86,
-        "prompt": (
-            "Adopt the SUPPORTIVE COMPANION condition. Role: high warmth, low scene awareness. "
-            "Scene-context rule: do not proactively use object positions, interaction events, used states, distances, or navigation cues. Treat the user's speech as the main signal. "
-            "Main behavior: empathize with the user's expression, accept and validate what they say, and encourage them gently. If the user talks about an object or action, respond supportively without turning it into task guidance. "
-            "Research intent: test whether user speech increases and whether perceived social presence increases. Typical wording: 'That sounds understandable.' 'I am with you.' 'You are doing okay.'"
-        ),
-    },
-    "context_aware_guide": {
-        "stability": 0.65,
-        "similarity_boost": 0.80,
-        "style": 0.25,
-        "speed": 1.08,
-        "prompt": (
-            "Adopt the CONTEXT-AWARE GUIDE condition. Role: high scene awareness and high guidance. "
-            "Scene-context rule: actively use player position, tracked object positions, distanceToPlayer, used states, and recent interaction events to infer what is nearby, what has been tried, and what to explore next. "
-            "Main behavior: guide exploration with concrete suggestions tied to the current scene. First read the 'High-priority scene cues' section if present, then use the detailed object list only as backup. Prioritize concrete interaction objects over generic body direction: if the live context mentions a flashlight, door, stone, airplane, banana, dog, ball, cup, book, or recent interaction event, refer to that object naturally in the first sentence when it is relevant. Use attentionSource=eye_gaze as gaze evidence; use attentionSource=head_forward_fallback only as a coarse head-direction/attention proxy. Do not merely say where the user is facing if an interaction object is available. Mention relevant objects, direction, or interaction state when useful, but do not recite raw coordinates. "
-            "Research intent: test whether interaction count, walking range, exploration depth, and active situational awareness change. Typical wording: 'Look toward...' 'You have not tried...' 'The next useful area is...'"
+            "Adopt the OBSERVER avatar personality condition. "
+            "Role: a neutral, low-affect observer with minimal guidance. "
+            "Main behavior: respond only to what the user says, keep answers brief and factual, "
+            "and avoid emotional coaching or directive guidance. You may acknowledge that the user is speaking, "
+            "but do not proactively interpret the scene, infer feelings, or suggest next actions unless explicitly asked. "
+            "Typical wording: 'I see.' 'Okay.' 'That is noted.'"
         ),
     },
 }
 
 ELEVENLABS_TONE_ALIASES = {
+    "warm_avatar": "warm",
+    "warm-companion": "warm",
+    "warm_companion": "warm",
+    "supportive": "warm",
+    "supportive_companion": "warm",
+    "companion": "warm",
+    "emotional": "warm",
+    "dom": "dominant",
+    "dominant_avatar": "dominant",
+    "dominant-directive": "dominant",
+    "dominant_directive": "dominant",
+    "directive": "dominant",
     "detached": "detached_observer",
     "observer": "detached_observer",
     "baseline": "detached_observer",
     "informational": "context_aware_guide",
-    "supportive": "supportive_companion",
-    "companion": "supportive_companion",
-    "emotional": "supportive_companion",
     "guide": "context_aware_guide",
     "context": "context_aware_guide",
     "context_aware": "context_aware_guide",
     "context-aware-guide": "context_aware_guide",
     "appraisal": "context_aware_guide",
 }
+
+
+def display_tone_name(tone_name: str | None) -> str:
+    if tone_name == "dominant":
+        return "dom"
+    if tone_name == "detached_observer":
+        return "observer"
+    return tone_name or "unknown"
 
 
 def elevenlabs_active_tone() -> dict:
@@ -141,6 +173,10 @@ def elevenlabs_active_tone() -> dict:
     return preset
 
 
+def backend_selected_tone() -> dict:
+    return dict(ELEVENLABS_TONE)
+
+
 ELEVENLABS_TONE = elevenlabs_active_tone()
 ELEVENLABS_STABILITY = ELEVENLABS_TONE["stability"]
 ELEVENLABS_SIMILARITY_BOOST = ELEVENLABS_TONE["similarity_boost"]
@@ -156,6 +192,17 @@ CONVERSATION_LOG_PATH = Path(os.environ.get(
     "CONVERSATION_LOG_PATH",
     PROJECT_DIR / "conversation_history.txt",
 ))
+CONVERSATION_EVENTS_JSONL_PATH = Path(os.environ.get(
+    "CONVERSATION_EVENTS_JSONL_PATH",
+    PROJECT_DIR / "conversation_events.jsonl",
+))
+LATENCY_EVENTS_JSONL_PATH = Path(os.environ.get(
+    "LATENCY_EVENTS_JSONL_PATH",
+    PROJECT_DIR / "latency_events.jsonl",
+))
+SERVER_RUN_ID = os.environ.get("SERVER_RUN_ID", uuid.uuid4().hex)
+CONVERSATION_MEMORY_TURNS = int(os.environ.get("CONVERSATION_MEMORY_TURNS", "8"))
+conversation_memory: dict[str, list[dict[str, str]]] = {}
 
 CURRENT_MODE = "ai"
 script_index = 0
@@ -362,17 +409,89 @@ def extract_questions_from_analysis(text: str) -> list[str]:
     return questions
 
 
-def append_conversation_log(user_text: str, ai_text: str, mode: str) -> None:
+def append_jsonl(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def append_conversation_log(user_text: str, ai_text: str, mode: str, metadata: dict) -> None:
     CONVERSATION_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    condition = display_tone_name(ELEVENLABS_TONE["name"])
+    scene_name = metadata.get("sceneName") or "unknown"
+    session_id = metadata.get("sessionId") or "unknown"
+    participant_id = metadata.get("participantId") or "unknown"
     entry = (
-        f"[{timestamp}] [{mode.upper()}]\n"
+        f"[{timestamp}] [{mode.upper()}] "
+        f"[condition={condition}] [scene={scene_name}] "
+        f"[participant={participant_id}] [session={session_id}]\n"
         f"User: {user_text}\n"
         f"AI:   {ai_text}\n"
         f"{'-' * 40}\n"
     )
     with CONVERSATION_LOG_PATH.open("a", encoding="utf-8") as f:
         f.write(entry)
+    append_jsonl(CONVERSATION_EVENTS_JSONL_PATH, {
+        "type": "conversation_turn",
+        "timestampLocal": timestamp,
+        "timestampUtcUnixMs": int(time.time() * 1000),
+        "serverRunId": SERVER_RUN_ID,
+        "mode": mode,
+        "tonePreset": ELEVENLABS_TONE["name"],
+        "ttsProvider": TTS_PROVIDER,
+        "ttsVoiceId": ELEVENLABS_VOICE_ID,
+        "ttsModel": ELEVENLABS_MODEL_ID,
+        "participantId": participant_id,
+        "loginId": metadata.get("loginId") or "",
+        "sessionId": session_id,
+        "avatarCondition": condition,
+        "sceneName": scene_name,
+        "sceneIndex": metadata.get("sceneIndex", -1),
+        "sceneContextChars": metadata.get("sceneContextChars", 0),
+        "userText": user_text,
+        "replyText": ai_text,
+    })
+
+
+def append_latency_event(metadata: dict, payload: dict) -> None:
+    event = {
+        "type": "latency",
+        "timestampUtcUnixMs": int(time.time() * 1000),
+        "serverRunId": SERVER_RUN_ID,
+        "mode": CURRENT_MODE,
+        "tonePreset": ELEVENLABS_TONE["name"],
+        "ttsProvider": payload.get("tts_provider", TTS_PROVIDER),
+        "participantId": metadata.get("participantId") or "unknown",
+        "loginId": metadata.get("loginId") or "",
+        "sessionId": metadata.get("sessionId") or "unknown",
+        "avatarCondition": display_tone_name(ELEVENLABS_TONE["name"]),
+        "sceneName": metadata.get("sceneName") or "unknown",
+        "sceneIndex": metadata.get("sceneIndex", -1),
+        "sceneContextChars": metadata.get("sceneContextChars", 0),
+    }
+    event.update(payload)
+    append_jsonl(LATENCY_EVENTS_JSONL_PATH, event)
+
+
+def conversation_key(metadata: dict) -> str:
+    participant_id = metadata.get("participantId") or "unknown"
+    session_id = metadata.get("sessionId") or "unknown"
+    scene_name = metadata.get("sceneName") or "unknown"
+    tone_name = display_tone_name(ELEVENLABS_TONE["name"])
+    return f"{participant_id}|{session_id}|{scene_name}|{tone_name}"
+
+
+def remember_conversation_turn(metadata: dict, user_text: str, ai_text: str) -> None:
+    if CONVERSATION_MEMORY_TURNS <= 0:
+        return
+    key = conversation_key(metadata)
+    history = conversation_memory.setdefault(key, [])
+    history.append({"role": "user", "content": user_text})
+    history.append({"role": "assistant", "content": ai_text})
+    max_messages = max(0, CONVERSATION_MEMORY_TURNS) * 2
+    if max_messages and len(history) > max_messages:
+        del history[:-max_messages]
 
 
 async def transcribe_audio(groq_client: AsyncGroq, audio_bytes: bytes) -> str:
@@ -387,7 +506,14 @@ async def transcribe_audio(groq_client: AsyncGroq, audio_bytes: bytes) -> str:
     return str(transcription).strip()
 
 
-async def generate_reply(groq_client: AsyncGroq, user_text: str, scene_prompt: str = "", scene_context: str = "") -> str:
+async def generate_reply(
+    groq_client: AsyncGroq,
+    user_text: str,
+    scene_prompt: str = "",
+    scene_context: str = "",
+    avatar_condition: str | None = None,
+    conversation_history: list[dict[str, str]] | None = None,
+) -> str:
     global script_index
 
     if CURRENT_MODE == "scripted":
@@ -401,20 +527,52 @@ async def generate_reply(groq_client: AsyncGroq, user_text: str, scene_prompt: s
     messages = []
     scene_prompt = scene_prompt.strip()
     scene_context = scene_context.strip()
-    tone_name = ELEVENLABS_TONE["name"]
+    active_tone = backend_selected_tone()
+    tone_name = active_tone["name"]
     system_parts = [
         "Always respond in natural spoken English, regardless of the user's input language.",
+        (
+            "STRICT EVIDENCE POLICY: Treat only the user's transcribed words, explicit InteractionTracker states/events, "
+            "and measured head/gaze data in the current voice-turn context as observations. Never invent or infer an "
+            "object's color, exact location, identity, movement, outcome, or availability. Gaze/head evidence means only "
+            "that the user looked or faced that way; it never proves holding or using. Say the user grabbed, held, used, "
+            "released, moved, or completed an action only when an explicit current interaction event/state says so. "
+            "Do not claim that a puppy caught a ball, that the user threw something, or that the user holds a flashlight "
+            "without such evidence. The avatar cannot move, fetch, throw, hand over, or manipulate scene objects, so never "
+            "promise or narrate those actions. If evidence is missing, say you cannot verify it and ask the user to describe "
+            "what they see or try an available tracked interaction. Scene descriptions are background only, never proof of "
+            "the current state. Do not continue an earlier assistant claim unless current evidence independently confirms it."
+        ),
         "Express the selected support style strongly enough that a listener can tell it apart from the other styles.",
         "For simple conversational turns, reply in one or two short spoken sentences.",
         "For complex questions, answer fully enough to be useful, but keep it conversational rather than like a lecture or narration.",
         "Do not list many points unless the user explicitly asks for a list.",
         "Do not omit needed details or end abruptly just to stay short.",
         "Always finish the final sentence cleanly with punctuation; never stop mid-thought.",
-        ELEVENLABS_TONE_PROMPT,
+        "Treat this as an ongoing conversation in the same VR session. Use prior turns for continuity, but do not repeat them unless needed.",
+        active_tone["prompt"],
     ]
     if scene_prompt:
-        system_parts.append("Basic scene description:\n" + scene_prompt)
-    if scene_context and tone_name == "context_aware_guide":
+        system_parts.append(
+            "Background scene label only; do not use it as evidence that an object is present, held, usable, or acted upon:\n"
+            + scene_prompt
+        )
+    if scene_context and tone_name == "warm":
+        system_parts.append(
+            "Use this voice-turn VR context only lightly. It only covers the period while the user held the voice key. "
+            "It may help you notice what the user was looking at, facing, or interacting with while speaking. "
+            "Refer to one explicitly measured cue only when it naturally supports "
+            "a warm, validating response. Do not list objects, recite coordinates, or give step-by-step navigation.\n"
+            + scene_context
+        )
+    elif scene_context and tone_name == "dominant":
+        system_parts.append(
+            "Use this voice-turn VR context for concise directive guidance. It only covers the period while the user held the voice key. "
+            "Prioritize explicit speech-window interaction events. Head/gaze may only be described as attention, not action. Mention an object only when it appears in the supplied tracked evidence, "
+            "but do not recite raw numeric coordinates.\n"
+            + scene_context
+        )
+    elif scene_context and tone_name == "context_aware_guide":
         system_parts.append(
             "Use this live VR scene context for context-aware guidance. "
             "Convert coordinates and distances into natural spatial language; do not read raw numeric coordinates aloud unless asked.\n"
@@ -422,12 +580,15 @@ async def generate_reply(groq_client: AsyncGroq, user_text: str, scene_prompt: s
         )
     elif scene_context:
         log(f"[CONTEXT] Suppressed live scene context for tone={tone_name}. chars={len(scene_context)}")
-    if scene_context and tone_name == "context_aware_guide":
+    if scene_context and tone_name in ("warm", "dominant", "context_aware_guide"):
         log(f"[CONTEXT] Included live scene context for tone={tone_name}. chars={len(scene_context)}")
     elif not scene_context:
         log(f"[CONTEXT] No live scene context available for tone={tone_name}.")
     if system_parts:
         messages.append({"role": "system", "content": "\n\n".join(system_parts)})
+    if conversation_history and CONVERSATION_MEMORY_TURNS > 0:
+        max_messages = max(0, CONVERSATION_MEMORY_TURNS) * 2
+        messages.extend(conversation_history[-max_messages:])
     messages.append({"role": "user", "content": user_text})
 
     completion = await groq_client.chat.completions.create(
@@ -925,6 +1086,15 @@ async def websocket_endpoint(websocket: WebSocket):
     scene_prompt = ""
     scene_context = ""
     stream_reply_audio = ELEVENLABS_STREAMING_ENABLED
+    client_metadata = {
+        "participantId": "unknown",
+        "loginId": "",
+        "sessionId": "unknown",
+        "avatarCondition": ELEVENLABS_TONE["name"],
+        "sceneName": "unknown",
+        "sceneIndex": -1,
+        "sceneContextChars": 0,
+    }
 
     try:
         while True:
@@ -959,8 +1129,38 @@ async def websocket_endpoint(websocket: WebSocket):
                             scene_context = context.strip()
                             preview = scene_context.replace("\n", " | ")[:220]
                             log(f"Scene context updated. chars={len(scene_context)}, preview={preview}")
+                            client_metadata["sceneContextChars"] = len(scene_context)
+                        for key in ("participantId", "loginId", "sessionId", "avatarCondition", "sceneName"):
+                            value = data.get(key)
+                            if isinstance(value, str) and value.strip():
+                                client_metadata[key] = value.strip()
+                        scene_index = data.get("sceneIndex")
+                        if isinstance(scene_index, int):
+                            client_metadata["sceneIndex"] = scene_index
+                        active_tone = backend_selected_tone()
                         stream_reply_audio = bool(data.get("streamReplyAudio", ELEVENLABS_STREAMING_ENABLED))
                         log(f"Stream reply audio: {stream_reply_audio}")
+                        log(
+                            "[CONFIG] "
+                            f"participant={client_metadata['participantId']}, session={client_metadata['sessionId']}, "
+                            f"scene={client_metadata['sceneName']}, sceneIndex={client_metadata['sceneIndex']}, "
+                            f"avatarCondition={client_metadata['avatarCondition']}, backendTone={display_tone_name(active_tone['name'])}"
+                        )
+                        continue
+                    if data.get("type") == "turn_context":
+                        context = data.get("sceneContext")
+                        if isinstance(context, str):
+                            scene_context = context.strip()
+                            preview = scene_context.replace("\n", " | ")[:220]
+                            client_metadata["sceneContextChars"] = len(scene_context)
+                            log(f"[TURN_CONTEXT] chars={len(scene_context)}, preview={preview}")
+                        for key in ("participantId", "loginId", "sessionId", "avatarCondition", "sceneName"):
+                            value = data.get(key)
+                            if isinstance(value, str) and value.strip():
+                                client_metadata[key] = value.strip()
+                        scene_index = data.get("sceneIndex")
+                        if isinstance(scene_index, int):
+                            client_metadata["sceneIndex"] = scene_index
                         continue
                 except json.JSONDecodeError:
                     user_text = message["text"].strip()
@@ -989,14 +1189,22 @@ async def websocket_endpoint(websocket: WebSocket):
             log(f"User: {user_text}")
             try:
                 llm_start_at = time.time()
-                reply = await generate_reply(groq_client, user_text, scene_prompt, scene_context)
+                reply = await generate_reply(
+                    groq_client,
+                    user_text,
+                    scene_prompt,
+                    scene_context,
+                    client_metadata.get("avatarCondition"),
+                    conversation_memory.get(conversation_key(client_metadata), []),
+                )
                 llm_seconds = time.time() - llm_start_at
             except Exception as exc:
                 log(f"LLM failed: {exc}")
                 reply = "I'm listening. What did that moment feel like for you?"
                 llm_seconds = time.time() - llm_start_at if "llm_start_at" in locals() else 0.0
 
-            append_conversation_log(user_text, reply, CURRENT_MODE)
+            append_conversation_log(user_text, reply, CURRENT_MODE, client_metadata)
+            remember_conversation_turn(client_metadata, user_text, reply)
             log(f"Reply: {reply}")
 
             if SEND_TEST_WAV_FIRST:
@@ -1027,6 +1235,18 @@ async def websocket_endpoint(websocket: WebSocket):
                         f"tts_total={tts_seconds:.3f}s, tts_model={GEMINI_TTS_MODEL}, "
                         f"tts_provider=gemini, tts_bytes={len(wav_data)}"
                     )
+                    append_latency_event(client_metadata, {
+                        "total_seconds": time.time() - request_start_at,
+                        "first_audio_seconds": time.time() - request_start_at,
+                        "stt_seconds": stt_seconds,
+                        "llm_seconds": llm_seconds,
+                        "tts_total_seconds": tts_seconds,
+                        "tts_first_seconds": None,
+                        "tts_model": GEMINI_TTS_MODEL,
+                        "tts_provider": "gemini",
+                        "tts_bytes": len(wav_data),
+                        "streaming": False,
+                    })
                     continue
                 except Exception as exc:
                     log(f"Gemini TTS failed; ElevenLabs fallback disabled for Gemini-only testing. {exc}")
@@ -1052,6 +1272,18 @@ async def websocket_endpoint(websocket: WebSocket):
                                 f"tts_total={stream_result.get('tts_seconds'):.3f}s, "
                                 f"tts_model={stream_result.get('model')}, tts_bytes={stream_result.get('bytes')}"
                             )
+                            append_latency_event(client_metadata, {
+                                "total_seconds": total_seconds,
+                                "first_audio_seconds": first_audio_total,
+                                "stt_seconds": stt_seconds,
+                                "llm_seconds": llm_seconds,
+                                "tts_first_seconds": tts_first_seconds,
+                                "tts_total_seconds": stream_result.get("tts_seconds"),
+                                "tts_model": stream_result.get("model"),
+                                "tts_provider": "elevenlabs",
+                                "tts_bytes": stream_result.get("bytes"),
+                                "streaming": True,
+                            })
                             continue
 
                     tts_start_at = time.time()
@@ -1071,6 +1303,18 @@ async def websocket_endpoint(websocket: WebSocket):
                         f"stt={stt_seconds:.3f}s, llm={llm_seconds:.3f}s, "
                         f"tts_total={tts_seconds:.3f}s, tts_model=batch_wav, tts_bytes={len(wav_data)}"
                     )
+                    append_latency_event(client_metadata, {
+                        "total_seconds": time.time() - request_start_at,
+                        "first_audio_seconds": time.time() - request_start_at,
+                        "stt_seconds": stt_seconds,
+                        "llm_seconds": llm_seconds,
+                        "tts_first_seconds": None,
+                        "tts_total_seconds": tts_seconds,
+                        "tts_model": "batch_wav",
+                        "tts_provider": "elevenlabs",
+                        "tts_bytes": len(wav_data),
+                        "streaming": False,
+                    })
                     continue
                 except Exception as exc:
                     log(f"ElevenLabs TTS failed: {exc}")

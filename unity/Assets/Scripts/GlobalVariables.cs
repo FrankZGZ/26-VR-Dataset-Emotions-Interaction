@@ -17,6 +17,8 @@ public static class PlayerData
 {
     public static string participantId { get; set; }
     public static string loginId { get; set; }
+    public static string sessionId { get; set; }
+    public static string avatarCondition { get; set; }
     public static string[] sceneSequence { get; set; }
     public static int currentSceneIndex { get; set; }
 
@@ -25,6 +27,8 @@ public static class PlayerData
     {
         participantId = "0";
         loginId = "-1";
+        sessionId = System.Guid.NewGuid().ToString("N");
+        avatarCondition = "unset";
         sceneSequence = new string[1] { "Test" };
         currentSceneIndex = 0;
     }
@@ -42,6 +46,8 @@ public class FinishStudyModel
 {
     public string participantId;
     public string loginId;
+    public string sessionId;
+    public string avatarCondition;
     public long timestampUtcUnixMs;
 }
 
@@ -57,11 +63,32 @@ public class EmotionSurveySingle
 {
     public string participantId;
     public string loginId;
+    public string sessionId;
+    public string avatarCondition;
     public long timestampUtcUnixMs;
     public string sceneName;
+    public int sceneIndex;
+    public int sceneSequenceLength;
+    public string surveyVersion;
     public float valenceValue;
     public float arousalValue;
     public float dominanceValue;
+    public float socialPresenceValue;
+    public float autonomyValue;
+    public float agencyValue;
+    public float helpfulnessValue;
+    public float trustValue;
+    public float intrusivenessValue;
+    public float warmthValue;
+    public float competenceValue;
+    public float contextAwarenessValue;
+    public float guidanceClarityValue;
+    public float attentionAccuracyValue;
+    public float conversationNaturalnessValue;
+    public float asaqUserEmotionPresenceValue;
+    public float asaqAgentPersonalityPresenceValue;
+    public float asaqAgentIntentionalityValue;
+    public float asaqSocialPresenceValue;
 }
 
 
