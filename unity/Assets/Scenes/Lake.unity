@@ -37445,7 +37445,9 @@ MonoBehaviour:
   gazeRayMaxDistance: 20
   gazeNearRayAngleDegrees: 14
   gazeLongAttentionThresholdSeconds: 0.5
-  gazeAvatarObjectNameHints: Rocketbox,Female_Adult,Male_Adult,ReadyPlayerMe,DigitalHuman,SocialAgent,Companion,Avatar,Character,Person,Human,NPC,Man,Woman,ManScreaming
+  gazeVoiceMinimumHitSamples: 3
+  gazeVoiceMinimumDwellSeconds: 0.3
+  gazeAvatarObjectNameHints: Rocketbox,ReadyPlayerMe,DigitalHuman,SocialAgent,CompanionAvatar
   autoAttachAvatarGazeTargets: 1
   forceHideGazeDebugVisuals: 0
   forceShowGazeDebugVisuals: 1

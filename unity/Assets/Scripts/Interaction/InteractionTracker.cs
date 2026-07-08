@@ -101,6 +101,11 @@ public class InteractionTracker : MonoBehaviour
         return string.Join("\n", recentEvents.GetRange(start, recentEvents.Count - start));
     }
 
+    public static void ClearRecentEvents()
+    {
+        recentEvents.Clear();
+    }
+
     void OnDestroy()
     {
         // When the object is destroyed, make sure to unsubscribe to prevent memory leaks.

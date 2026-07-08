@@ -177,8 +177,10 @@ public class CameraPoseSender : MonoBehaviour
     [Range(0.1f, 100f)] public float gazeRayMaxDistance = 20f;
     [Range(1f, 30f)] public float gazeNearRayAngleDegrees = 14f;
     [Range(0.1f, 5f)] public float gazeLongAttentionThresholdSeconds = 0.5f;
+    [Range(1, 20)] public int gazeVoiceMinimumHitSamples = 3;
+    [Range(0.1f, 2f)] public float gazeVoiceMinimumDwellSeconds = 0.3f;
     [Tooltip("Name hints for avatar/person objects that should block gaze raycasts even when they do not already have an InteractionTracker.")]
-    public string gazeAvatarObjectNameHints = "Rocketbox,Female_Adult,Male_Adult,ReadyPlayerMe,DigitalHuman,SocialAgent,Companion,Avatar,Character,Person,Human,NPC,Man,Woman,ManScreaming";
+    public string gazeAvatarObjectNameHints = "Rocketbox,ReadyPlayerMe,DigitalHuman,SocialAgent,CompanionAvatar";
     public bool autoAttachAvatarGazeTargets = true;
     public bool forceHideGazeDebugVisuals = false;
     public bool forceShowGazeDebugVisuals = true;
@@ -537,7 +539,8 @@ public class CameraPoseSender : MonoBehaviour
               ", forward=" + FormatVector(lastPose.orientation * Vector3.forward)
             : "latestHead none";
 
-        string gazeText = lastGaze != null
+        bool latestAttentionQualified = IsVoiceWindowAttentionQualified(lastGaze, gazeStart);
+        string gazeText = lastGaze != null && latestAttentionQualified
             ? "latestAttention source=" + (lastGaze.usedHeadForwardFallback ? "head_forward_fallback" : (lastGaze.available ? "eye_gaze" : "none")) +
               ", hit=" + lastGaze.hitInteractionObject +
               ", hitName=" + lastGaze.hitDisplayName +
@@ -546,7 +549,7 @@ public class CameraPoseSender : MonoBehaviour
               ", controllerGrabbed=" + lastGaze.controllerGrabbed +
               ", interactionUsed=" + lastGaze.interactionUsed +
               ", hitDistance=" + lastGaze.hitDistance.ToString("0.00")
-            : "latestAttention none";
+            : "latestAttention none (insufficient sustained evidence)";
 
         LatestVoiceRuntimeContextText =
             "voiceWindow duration=" + duration.ToString("0.00") + "s" +
@@ -598,12 +601,60 @@ public class CameraPoseSender : MonoBehaviour
         var parts = new List<string>();
         foreach (var pair in hitCounts)
         {
+            float dwellSeconds = pair.Value * recordInterval;
+            if (pair.Value < gazeVoiceMinimumHitSamples || dwellSeconds < gazeVoiceMinimumDwellSeconds)
+            {
+                continue;
+            }
+
             parts.Add(pair.Key + " attentionHits=" + pair.Value + " distance~" + maxDistances[pair.Key].ToString("0.0") + "m source=attentionOnly_notHeld");
+        }
+
+        if (parts.Count == 0)
+        {
+            return "none";
         }
 
         parts.Sort();
         int count = Mathf.Min(5, parts.Count);
         return string.Join("; ", parts.GetRange(0, count));
+    }
+
+    private bool IsVoiceWindowAttentionQualified(GazeSample targetSample, int gazeStartIndex)
+    {
+        if (targetSample == null || !targetSample.hitInteractionObject)
+        {
+            return false;
+        }
+
+        string targetName = string.IsNullOrWhiteSpace(targetSample.hitDisplayName)
+            ? targetSample.hitObjectName
+            : targetSample.hitDisplayName;
+        if (string.IsNullOrWhiteSpace(targetName))
+        {
+            return false;
+        }
+
+        int hitCount = 0;
+        for (int i = Mathf.Max(0, gazeStartIndex); i < bufferedGazeSamples.Count; i++)
+        {
+            GazeSample sample = bufferedGazeSamples[i];
+            if (sample == null || !sample.hitInteractionObject)
+            {
+                continue;
+            }
+
+            string sampleName = string.IsNullOrWhiteSpace(sample.hitDisplayName)
+                ? sample.hitObjectName
+                : sample.hitDisplayName;
+            if (string.Equals(sampleName, targetName, StringComparison.Ordinal))
+            {
+                hitCount++;
+            }
+        }
+
+        return hitCount >= gazeVoiceMinimumHitSamples &&
+               hitCount * recordInterval >= gazeVoiceMinimumDwellSeconds;
     }
 
     private string BuildAttendedObjectsContextText()
@@ -967,6 +1018,13 @@ public class CameraPoseSender : MonoBehaviour
                 bestHit = hit;
                 return tracker;
             }
+
+            // A solid, untracked collider occludes anything behind it. Do not let the
+            // gaze ray "see through" walls, furniture, or other scene geometry.
+            if (!hit.collider.isTrigger && hit.distance > 0.02f)
+            {
+                break;
+            }
         }
 
         bestHit = new RaycastHit();
@@ -1029,7 +1087,7 @@ public class CameraPoseSender : MonoBehaviour
                 continue;
             }
 
-            GameObject avatarRoot = animator.isHuman ? animator.gameObject : ResolveAvatarGazeRoot(animator.gameObject);
+            GameObject avatarRoot = ResolveAvatarGazeRoot(animator.gameObject);
             if (AttachAvatarGazeTarget(avatarRoot, seenObjects))
             {
                 attachedCount++;
@@ -1083,7 +1141,14 @@ public class CameraPoseSender : MonoBehaviour
             return false;
         }
 
-        if (candidate.GetComponent<CameraPoseSender>() != null || candidate.GetComponent<VrmeAtticClient>() != null)
+        // A VrmeAtticClient identifies the actual conversational avatar. Accept
+        // this explicit marker while keeping broad humanoid-name matching disabled.
+        if (candidate.GetComponent<VrmeAtticClient>() != null)
+        {
+            return true;
+        }
+
+        if (candidate.GetComponent<CameraPoseSender>() != null)
         {
             return false;
         }
@@ -1318,6 +1383,13 @@ public class CameraPoseSender : MonoBehaviour
         foreach (InteractionTracker tracker in trackers)
         {
             if (tracker == null || !tracker.isActiveAndEnabled)
+            {
+                continue;
+            }
+
+            // Social/avatar targets must be directly raycast. The angular fallback is
+            // intentionally reserved for small physical interaction targets.
+            if (tracker.attentionOnlyTarget)
             {
                 continue;
             }

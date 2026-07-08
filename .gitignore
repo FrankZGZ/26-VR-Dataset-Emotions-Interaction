@@ -47,6 +47,8 @@ unity/Assets/Scenes/Attic/VRME/**/*.pyc
 
 # Recordings can get excessive in size
 /[Rr]ecordings/
+voice_recordings/
+voice_transcripts.txt
 
 # Uncomment this line if you wish to ignore the asset store tools plugin
 # /[Aa]ssets/AssetStoreTools*

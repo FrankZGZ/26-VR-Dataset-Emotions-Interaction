@@ -94,6 +94,7 @@ public static class VRMERocketboxPrefabBuilder
         client.maxRecentInteractionEvents = 5;
         client.playbackAudioSource = audioSource;
         client.streamReplyAudio = true;
+        client.avatarCondition = "backend";
         client.streamStartBufferSeconds = 0.18f;
         client.streamMaxSeconds = 45;
         client.autoIntroOnStart = false;
@@ -107,6 +108,7 @@ public static class VRMERocketboxPrefabBuilder
         faceCamera.yawOffsetDegrees = 0f;
 
         root.AddComponent<AvatarGroundAligner>();
+        root.AddComponent<AvatarDominanceBehaviorController>();
 
         AudioDrivenBlendShapeMouth mouth = root.AddComponent<AudioDrivenBlendShapeMouth>();
         mouth.audioSource = audioSource;

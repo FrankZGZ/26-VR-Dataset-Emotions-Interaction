@@ -66,28 +66,22 @@ ELEVENLABS_STREAMING_ENABLED = os.environ.get("ELEVENLABS_STREAMING_ENABLED", "1
 ELEVENLABS_STREAM_CHUNK_BYTES = int(os.environ.get("ELEVENLABS_STREAM_CHUNK_BYTES", "2048"))
 ELEVENLABS_OPTIMIZE_STREAMING_LATENCY = os.environ.get("ELEVENLABS_OPTIMIZE_STREAMING_LATENCY", "4").strip()
 ELEVENLABS_STREAM_END_SILENCE_MS = int(os.environ.get("ELEVENLABS_STREAM_END_SILENCE_MS", "450"))
-ELEVENLABS_TONE_PRESET = os.environ.get("ELEVENLABS_TONE_PRESET", "warm").strip().lower()
+ELEVENLABS_TONE_PRESET = os.environ.get("ELEVENLABS_TONE_PRESET", "observer").strip().lower()
 ELEVENLABS_MANUAL_VOICE_SETTINGS = os.environ.get("ELEVENLABS_MANUAL_VOICE_SETTINGS", "0").strip().lower() in ("1", "true", "yes", "on")
 ELEVENLABS_USE_SPEAKER_BOOST = os.environ.get("ELEVENLABS_USE_SPEAKER_BOOST", "1").strip().lower() in ("1", "true", "yes", "on")
 
 ELEVENLABS_TONE_PRESETS = {
-    "warm": {
+    "submissive": {
         "stability": 0.65,
         "similarity_boost": 0.78,
-        "style": 0.35,
-        "speed": 1.00,
+        "style": 0.18,
+        "speed": 0.94,
         "prompt": (
-            "Adopt the WARM avatar personality condition. "
-            "Big Five trait embedding on a 0-4 scale: Extraversion=4, Agreeableness=4, "
-            "Conscientiousness=2, Neuroticism=0, Openness=4. "
-            "Role: a warm, friendly, emotionally supportive VR avatar companion. "
-            "Main behavior: speak gently and reassuringly, validate the user's feelings, "
-            "and invite continued exploration without pressure. You may lightly use the user's "
-            "current gaze, head direction, and recent interaction state to make the response feel aware, "
-            "but do not turn it into detailed navigation or a long instruction. Keep the same functional "
-            "help content as other conditions while changing only the interpersonal delivery style. "
-            "Use short, natural spoken responses suitable for VR. Do not over-explain. "
-            "Do not become directive, controlling, judgmental, or overly clinical."
+            "Adopt the SUBMISSIVE avatar condition. Keep the same factual task content as the dominant "
+            "condition, but express it tentatively and defer decisions to the participant. Use brief "
+            "phrasing such as 'perhaps', 'maybe', 'if you want', and 'you could'. Avoid commands, pressure, "
+            "certainty, confrontation, or claims of authority. Do not add extra emotional reassurance or "
+            "warmth that would introduce a separate warmth manipulation. Remain concise and useful."
         ),
     },
     "dominant": {
@@ -149,13 +143,16 @@ ELEVENLABS_TONE_PRESETS = {
 }
 
 ELEVENLABS_TONE_ALIASES = {
-    "warm_avatar": "warm",
-    "warm-companion": "warm",
-    "warm_companion": "warm",
-    "supportive": "warm",
-    "supportive_companion": "warm",
-    "companion": "warm",
-    "emotional": "warm",
+    "warm_avatar": "submissive",
+    "warm-companion": "submissive",
+    "warm_companion": "submissive",
+    "warm": "submissive",
+    "supportive": "submissive",
+    "supportive_companion": "submissive",
+    "companion": "submissive",
+    "emotional": "submissive",
+    "sub": "submissive",
+    "submission": "submissive",
     "dom": "dominant",
     "dominant_avatar": "dominant",
     "dominant-directive": "dominant",
@@ -178,6 +175,8 @@ def display_tone_name(tone_name: str | None) -> str:
         return "dom"
     if tone_name == "detached_observer":
         return "observer"
+    if tone_name == "submissive":
+        return "sub"
     return tone_name or "unknown"
 
 
@@ -197,7 +196,7 @@ def elevenlabs_active_tone() -> dict:
     return preset
 
 
-def backend_selected_tone() -> dict:
+def backend_selected_tone(avatar_condition: str | None = None) -> dict:
     return dict(ELEVENLABS_TONE)
 
 
@@ -442,7 +441,8 @@ def append_jsonl(path: Path, payload: dict) -> None:
 def append_conversation_log(user_text: str, ai_text: str, mode: str, metadata: dict) -> None:
     CONVERSATION_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    condition = display_tone_name(ELEVENLABS_TONE["name"])
+    active_tone = backend_selected_tone(metadata.get("avatarCondition"))
+    condition = display_tone_name(active_tone["name"])
     scene_name = metadata.get("sceneName") or "unknown"
     session_id = metadata.get("sessionId") or "unknown"
     participant_id = metadata.get("participantId") or "unknown"
@@ -462,7 +462,7 @@ def append_conversation_log(user_text: str, ai_text: str, mode: str, metadata: d
         "timestampUtcUnixMs": int(time.time() * 1000),
         "serverRunId": SERVER_RUN_ID,
         "mode": mode,
-        "tonePreset": ELEVENLABS_TONE["name"],
+        "tonePreset": active_tone["name"],
         "ttsProvider": TTS_PROVIDER,
         "ttsVoiceId": ELEVENLABS_VOICE_ID,
         "ttsModel": ELEVENLABS_MODEL_ID,
@@ -479,17 +479,18 @@ def append_conversation_log(user_text: str, ai_text: str, mode: str, metadata: d
 
 
 def append_latency_event(metadata: dict, payload: dict) -> None:
+    active_tone = backend_selected_tone(metadata.get("avatarCondition"))
     event = {
         "type": "latency",
         "timestampUtcUnixMs": int(time.time() * 1000),
         "serverRunId": SERVER_RUN_ID,
         "mode": CURRENT_MODE,
-        "tonePreset": ELEVENLABS_TONE["name"],
+        "tonePreset": active_tone["name"],
         "ttsProvider": payload.get("tts_provider", TTS_PROVIDER),
         "participantId": metadata.get("participantId") or "unknown",
         "loginId": metadata.get("loginId") or "",
         "sessionId": metadata.get("sessionId") or "unknown",
-        "avatarCondition": display_tone_name(ELEVENLABS_TONE["name"]),
+        "avatarCondition": display_tone_name(active_tone["name"]),
         "sceneName": metadata.get("sceneName") or "unknown",
         "sceneIndex": metadata.get("sceneIndex", -1),
         "sceneContextChars": metadata.get("sceneContextChars", 0),
@@ -551,7 +552,7 @@ async def generate_reply(
     messages = []
     scene_prompt = scene_prompt.strip()
     scene_context = scene_context.strip()
-    active_tone = backend_selected_tone()
+    active_tone = backend_selected_tone(avatar_condition)
     tone_name = active_tone["name"]
     system_parts = [
         "Always respond in natural spoken English, regardless of the user's input language.",
@@ -581,12 +582,12 @@ async def generate_reply(
             "Background scene label only; do not use it as evidence that an object is present, held, usable, or acted upon:\n"
             + scene_prompt
         )
-    if scene_context and tone_name == "warm":
+    if scene_context and tone_name == "submissive":
         system_parts.append(
             "Use this voice-turn VR context only lightly. It only covers the period while the user held the voice key. "
             "It may help you notice what the user was looking at, facing, or interacting with while speaking. "
-            "Refer to one explicitly measured cue only when it naturally supports "
-            "a warm, validating response. Do not list objects, recite coordinates, or give step-by-step navigation.\n"
+            "Refer to one explicitly measured cue only when it naturally supports a tentative suggestion. "
+            "Do not list objects, recite coordinates, or give step-by-step navigation.\n"
             + scene_context
         )
     elif scene_context and tone_name == "dominant":
@@ -604,7 +605,7 @@ async def generate_reply(
         )
     elif scene_context:
         log(f"[CONTEXT] Suppressed live scene context for tone={tone_name}. chars={len(scene_context)}")
-    if scene_context and tone_name in ("warm", "dominant", "context_aware_guide"):
+    if scene_context and tone_name in ("submissive", "dominant", "context_aware_guide"):
         log(f"[CONTEXT] Included live scene context for tone={tone_name}. chars={len(scene_context)}")
     elif not scene_context:
         log(f"[CONTEXT] No live scene context available for tone={tone_name}.")
@@ -749,26 +750,25 @@ def elevenlabs_model_candidates() -> list[str]:
     return unique_candidates
 
 
-def gemini_voice_for_tone() -> str:
-    tone_name = ELEVENLABS_TONE["name"]
-    if tone_name == "supportive_companion":
-        return GEMINI_TTS_SUPPORTIVE_VOICE
-    if tone_name == "context_aware_guide":
+def gemini_voice_for_tone(tone_name: str | None = None) -> str:
+    tone_name = tone_name or ELEVENLABS_TONE["name"]
+    if tone_name == "dominant":
         return GEMINI_TTS_GUIDE_VOICE
+    if tone_name == "submissive":
+        return GEMINI_TTS_SUPPORTIVE_VOICE
     return GEMINI_TTS_DETACHED_VOICE
 
 
-def gemini_style_instruction() -> str:
-    tone_name = ELEVENLABS_TONE["name"]
-    if tone_name == "supportive_companion":
+def gemini_style_instruction(tone_name: str | None = None) -> str:
+    tone_name = tone_name or ELEVENLABS_TONE["name"]
+    if tone_name == "submissive":
         return (
-            "Read in a warm, gentle, supportive companion voice. "
-            "Use a slower pace, soft emotional presence, and reassuring intonation."
+            "Read in a quiet, tentative, deferential voice. Use a slightly slower pace and restrained emphasis. "
+            "Do not add warmth or emotional reassurance beyond the supplied wording."
         )
-    if tone_name == "context_aware_guide":
+    if tone_name == "dominant":
         return (
-            "Read in a clear, alert, context-aware guide voice. "
-            "Use a crisp pace, task-focused delivery, and confident directional tone."
+            "Read in a clear, confident, assertive voice. Use crisp pacing, firm emphasis, and controlled delivery."
         )
     return (
         "Read in a detached observer voice. "
@@ -776,13 +776,14 @@ def gemini_style_instruction() -> str:
     )
 
 
-def generate_gemini_wav(text: str) -> bytes:
+def generate_gemini_wav(text: str, tone_name: str | None = None) -> bytes:
     if not GEMINI_API_KEY:
         raise RuntimeError("Missing GEMINI_API_KEY or GOOGLE_API_KEY.")
 
-    voice_name = gemini_voice_for_tone()
+    tone_name = tone_name or ELEVENLABS_TONE["name"]
+    voice_name = gemini_voice_for_tone(tone_name)
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_TTS_MODEL}:generateContent"
-    prompt = f"{gemini_style_instruction()}\n\nSay exactly this text:\n{text}"
+    prompt = f"{gemini_style_instruction(tone_name)}\n\nSay exactly this text:\n{text}"
     payload = {
         "contents": [
             {
@@ -814,7 +815,7 @@ def generate_gemini_wav(text: str) -> bytes:
 
     log(
         "[TTS] Start Gemini generation. "
-        f"model={GEMINI_TTS_MODEL}, voice={voice_name}, tone={ELEVENLABS_TONE['name']}, "
+        f"model={GEMINI_TTS_MODEL}, voice={voice_name}, tone={tone_name}, "
         f"text_chars={len(text)}"
     )
     try:
@@ -904,7 +905,7 @@ def generate_elevenlabs_wav(text: str) -> bytes:
     raise RuntimeError("All ElevenLabs models failed. " + " | ".join(errors))
 
 
-def elevenlabs_stream_request(text: str, model_id: str) -> urllib.request.Request:
+def elevenlabs_stream_request(text: str, model_id: str, tone: dict | None = None) -> urllib.request.Request:
     if not ELEVENLABS_API_KEY:
         raise RuntimeError("Missing ELEVENLABS_API_KEY.")
     if not ELEVENLABS_OUTPUT_FORMAT.startswith("pcm_"):
@@ -916,14 +917,15 @@ def elevenlabs_stream_request(text: str, model_id: str) -> urllib.request.Reques
     )
     if ELEVENLABS_OPTIMIZE_STREAMING_LATENCY:
         url += f"&optimize_streaming_latency={ELEVENLABS_OPTIMIZE_STREAMING_LATENCY}"
+    tone = tone or ELEVENLABS_TONE
     payload = {
         "text": text,
         "model_id": model_id,
         "voice_settings": {
-            "stability": ELEVENLABS_STABILITY,
-            "similarity_boost": ELEVENLABS_SIMILARITY_BOOST,
-            "style": ELEVENLABS_STYLE,
-            "speed": ELEVENLABS_SPEED,
+            "stability": tone["stability"],
+            "similarity_boost": tone["similarity_boost"],
+            "style": tone["style"],
+            "speed": tone["speed"],
             "use_speaker_boost": ELEVENLABS_USE_SPEAKER_BOOST,
         },
     }
@@ -939,7 +941,7 @@ def elevenlabs_stream_request(text: str, model_id: str) -> urllib.request.Reques
     )
 
 
-async def stream_elevenlabs_pcm(websocket: WebSocket, text: str) -> dict:
+async def stream_elevenlabs_pcm(websocket: WebSocket, text: str, tone: dict | None = None) -> dict:
     sample_rate = elevenlabs_sample_rate(ELEVENLABS_OUTPUT_FORMAT)
     chunk_size = max(512, ELEVENLABS_STREAM_CHUNK_BYTES)
     errors = []
@@ -952,7 +954,7 @@ async def stream_elevenlabs_pcm(websocket: WebSocket, text: str) -> dict:
             f"format={ELEVENLABS_OUTPUT_FORMAT}, text_chars={len(text)}"
         )
         try:
-            request = elevenlabs_stream_request(text, model_id)
+            request = elevenlabs_stream_request(text, model_id, tone)
             with urllib.request.urlopen(request, timeout=ELEVENLABS_TIMEOUT_SECONDS) as response:
                 start_payload = json.dumps(
                     {
@@ -1162,6 +1164,15 @@ async def websocket_endpoint(websocket: WebSocket):
                         if isinstance(scene_index, int):
                             client_metadata["sceneIndex"] = scene_index
                         active_tone = backend_selected_tone()
+                        condition_payload = json.dumps(
+                            {
+                                "type": "condition_config",
+                                "avatarCondition": display_tone_name(active_tone["name"]),
+                            },
+                            ensure_ascii=False,
+                        )
+                        if not await safe_send_text(websocket, condition_payload, "condition_config"):
+                            break
                         stream_reply_audio = bool(data.get("streamReplyAudio", ELEVENLABS_STREAMING_ENABLED))
                         log(f"Stream reply audio: {stream_reply_audio}")
                         log(
@@ -1230,6 +1241,7 @@ async def websocket_endpoint(websocket: WebSocket):
             append_conversation_log(user_text, reply, CURRENT_MODE, client_metadata)
             remember_conversation_turn(client_metadata, user_text, reply)
             log(f"Reply: {reply}")
+            turn_tone = backend_selected_tone(client_metadata.get("avatarCondition"))
 
             if SEND_TEST_WAV_FIRST:
                 log("DEBUG_SEND_STEP_1: generating immediate test wav...")
@@ -1247,6 +1259,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         None,
                         generate_gemini_wav,
                         reply,
+                        turn_tone["name"],
                     )
                     tts_seconds = time.time() - tts_start_at
                     if not await safe_send_bytes(websocket, wav_data, "gemini_wav"):
@@ -1283,7 +1296,7 @@ async def websocket_endpoint(websocket: WebSocket):
             if ELEVENLABS_ENABLED:
                 try:
                     if stream_reply_audio and ELEVENLABS_STREAMING_ENABLED:
-                        stream_result = await stream_elevenlabs_pcm(websocket, reply)
+                        stream_result = await stream_elevenlabs_pcm(websocket, reply, turn_tone)
                         if stream_result.get("ok"):
                             total_seconds = time.time() - request_start_at
                             tts_first_seconds = stream_result.get("first_audio_seconds") or 0.0

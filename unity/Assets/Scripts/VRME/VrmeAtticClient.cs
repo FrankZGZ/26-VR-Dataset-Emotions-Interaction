@@ -27,14 +27,14 @@ public class VrmeAtticClient : MonoBehaviour
     public bool includeInteractionContext = true;
     public bool autoFindInteractionTrackers = true;
     public InteractionTracker[] keyInteractables = Array.Empty<InteractionTracker>();
-    public bool autoAttachInteractionTrackersToSceneObjects = false;
+    public bool autoAttachInteractionTrackersToSceneObjects = true;
     public bool autoAttachAvatarAttentionTracker = true;
     public bool autoDiscoverSceneObjectsForContext = false;
     public bool sendLiveContextOnlyForVoiceTurn = true;
     [Tooltip("Comma-separated object name hints used when InteractionTracker components are not present.")]
     public string sceneObjectNameHints = "HandTorch,Flashlight,Torch,Airplane,Plane,Stone,Rock,Banana,Fruit,Elephant,Dog,Puppy,Ball,Baseball,Book,Cup,Telescope,ManScreaming,Man,Gun,Sign,Door,Handle,Bar,Key,Switch,Button,Lever,Panel,Light,Exit";
     [Tooltip("Comma-separated object/script name hints used to mark the conversational avatar as a social attention target.")]
-    public string avatarObjectNameHints = "Rocketbox,Female_Adult,Male_Adult,ReadyPlayerMe,DigitalHuman,SocialAgent,Companion,Avatar,Character,Person,Human,NPC,Man,Woman,ManScreaming";
+    public string avatarObjectNameHints = "Rocketbox,ReadyPlayerMe,DigitalHuman,SocialAgent,CompanionAvatar";
     [Range(1, 40)] public int maxDiscoveredSceneObjects = 20;
     [Range(1f, 100f)] public float maxContextObjectDistance = 25f;
     public Transform playerTransform;
@@ -42,7 +42,7 @@ public class VrmeAtticClient : MonoBehaviour
     public AudioSource playbackAudioSource;
     [Range(0.1f, 5f)] public float replyGain = 2.2f;
     public bool streamReplyAudio = true;
-    [Tooltip("Unity no longer controls personality. The backend .env ELEVENLABS_TONE_PRESET selects warm/dom/observer.")]
+    [Tooltip("Personality is controlled only by the backend .env ELEVENLABS_TONE_PRESET.")]
     public string avatarCondition = "backend";
     [Range(0.02f, 1f)] public float streamStartBufferSeconds = 0.08f;
     [Range(5, 120)] public int streamMaxSeconds = 45;
@@ -72,13 +72,14 @@ public class VrmeAtticClient : MonoBehaviour
             audioSource = gameObject.AddComponent<AudioSource>();
         }
         streamingPlayer = new StreamingPcmPlayer();
+        InteractionTracker.ClearRecentEvents();
         PlayerData.avatarCondition = "backend";
 
         Debug.Log("[VRME] Client started. recordKey=" + (enableKeyboardRecordKey ? recordKey.ToString() : "disabled") +
             ", controllerRecordButton=" + (enableControllerRecordButton ? recordController + "/" + recordControllerButton : "disabled") +
             ", microphones=" + Microphone.devices.Length +
             ", sessionId=" + PlayerData.sessionId +
-            ", avatarCondition=backend-controlled");
+            ", avatarCondition=" + PlayerData.avatarCondition);
 
         if (autoAttachInteractionTrackersToSceneObjects)
         {
@@ -99,12 +100,46 @@ public class VrmeAtticClient : MonoBehaviour
 
         if (autoConnectOnStart)
         {
-            _ = ConnectAsync();
+            _ = ConnectAndSyncBackendConditionAsync();
         }
 
         if (autoIntroOnStart)
         {
             _ = RunAutoIntroAsync();
+        }
+    }
+
+    private async Task ConnectAndSyncBackendConditionAsync()
+    {
+        try
+        {
+            await ConnectAsync();
+            if (websocket == null || websocket.State != WebSocketState.Open)
+            {
+                return;
+            }
+
+            await SendConfigAsync();
+            byte[] buffer = new byte[1024];
+            WebSocketReceiveResult result = await websocket.ReceiveAsync(
+                new ArraySegment<byte>(buffer),
+                cancellation.Token);
+            if (result.MessageType != WebSocketMessageType.Text)
+            {
+                return;
+            }
+
+            string text = System.Text.Encoding.UTF8.GetString(buffer, 0, result.Count);
+            if (text.Contains("\"condition_config\""))
+            {
+                string backendCondition = ExtractJsonString(text, "avatarCondition", "observer");
+                mainThreadActions.Enqueue(() => ApplyBackendCondition(backendCondition));
+                Debug.Log("[VRME] Initial backend condition received: " + backendCondition);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("[VRME] Could not synchronize backend condition at startup: " + ex.Message);
         }
     }
 
@@ -293,29 +328,35 @@ public class VrmeAtticClient : MonoBehaviour
             return;
         }
 
-        string turnContext = CameraPoseSender.LatestVoiceRuntimeContextText;
-        if (!sendLiveContextOnlyForVoiceTurn && includeInteractionContext)
+        using (var writer = new StringWriter())
         {
-            string sceneContext = BuildSceneContext();
-            turnContext = turnContext + "\nsceneSnapshot=" + OneLineContext(sceneContext);
-        }
+            writer.WriteLine("[LIVE_USER_OBSERVATIONS]");
+            writer.WriteLine(CameraPoseSender.LatestVoiceRuntimeContextText);
+            writer.WriteLine("[/LIVE_USER_OBSERVATIONS]");
 
-        string json =
-            "{\"type\":\"turn_context\"" +
-            ",\"participantId\":\"" + EscapeJson(PlayerData.participantId) +
-            "\",\"loginId\":\"" + EscapeJson(PlayerData.loginId) +
-            "\",\"sessionId\":\"" + EscapeJson(PlayerData.sessionId) +
-            "\",\"avatarCondition\":\"" + EscapeJson(PlayerData.avatarCondition) +
-            "\",\"sceneName\":\"" + EscapeJson(SceneManager.GetActiveScene().name) +
-            "\",\"sceneIndex\":" + PlayerData.currentSceneIndex +
-            ",\"sceneContext\":\"" + EscapeJson(turnContext) + "\"}";
-        byte[] payload = System.Text.Encoding.UTF8.GetBytes(json);
-        await websocket.SendAsync(
-            new ArraySegment<byte>(payload),
-            WebSocketMessageType.Text,
-            true,
-            cancellation.Token);
-        Debug.Log("[VRME] Sent voice-turn context. chars=" + turnContext.Length + " preview=" + PreviewForLog(turnContext, 900));
+            if (includeInteractionContext)
+            {
+                writer.WriteLine(BuildSceneContext());
+            }
+
+            string turnContext = writer.ToString().TrimEnd();
+            string json =
+                "{\"type\":\"turn_context\"" +
+                ",\"participantId\":\"" + EscapeJson(PlayerData.participantId) +
+                "\",\"loginId\":\"" + EscapeJson(PlayerData.loginId) +
+                "\",\"sessionId\":\"" + EscapeJson(PlayerData.sessionId) +
+                "\",\"avatarCondition\":\"" + EscapeJson(PlayerData.avatarCondition) +
+                "\",\"sceneName\":\"" + EscapeJson(SceneManager.GetActiveScene().name) +
+                "\",\"sceneIndex\":" + PlayerData.currentSceneIndex +
+                ",\"sceneContext\":\"" + EscapeJson(turnContext) + "\"}";
+            byte[] payload = System.Text.Encoding.UTF8.GetBytes(json);
+            await websocket.SendAsync(
+                new ArraySegment<byte>(payload),
+                WebSocketMessageType.Text,
+                true,
+                cancellation.Token);
+            Debug.Log("[VRME] Sent voice-turn context. chars=" + turnContext.Length + " preview=" + PreviewForLog(turnContext, 900));
+        }
     }
 
     private static string EscapeJson(string value)
@@ -502,14 +543,11 @@ public class VrmeAtticClient : MonoBehaviour
 
         using (var writer = new StringWriter())
         {
-            writer.WriteLine("Scene: " + SceneManager.GetActiveScene().name);
-            writer.WriteLine("Latest user head and gaze state:");
-            writer.WriteLine(CameraPoseSender.LatestRuntimeContextText);
-
-            writer.WriteLine("Key interactable objects:");
+            writer.WriteLine("[INTERACTABLE_OBJECT_STATES]");
+            writer.WriteLine("scene=" + SceneManager.GetActiveScene().name);
             if (trackers.Length == 0)
             {
-                writer.WriteLine("- none with InteractionTracker components");
+                writer.WriteLine("none");
             }
             else
             {
@@ -526,9 +564,11 @@ public class VrmeAtticClient : MonoBehaviour
                     writer.WriteLine("- " + tracker.ContextName + " | interactionState={" + tracker.InteractionStateSummary + "}");
                 }
             }
+            writer.WriteLine("[/INTERACTABLE_OBJECT_STATES]");
 
-            writer.WriteLine("Recent interaction events:");
+            writer.WriteLine("[INTERACTION_EVENTS]");
             writer.WriteLine(InteractionTracker.GetRecentEventsText(maxRecentInteractionEvents));
+            writer.WriteLine("[/INTERACTION_EVENTS]");
             return writer.ToString();
         }
     }
@@ -896,7 +936,14 @@ public class VrmeAtticClient : MonoBehaviour
             return false;
         }
 
-        if (candidate.GetComponent<VrmeAtticClient>() != null || candidate.GetComponent<CameraPoseSender>() != null)
+        // The conversational avatar prefab owns this client component, so this is
+        // a stronger identity signal than broad names such as "Man" or "Character".
+        if (candidate.GetComponent<VrmeAtticClient>() != null)
+        {
+            return true;
+        }
+
+        if (candidate.GetComponent<CameraPoseSender>() != null)
         {
             return false;
         }
@@ -1251,6 +1298,14 @@ public class VrmeAtticClient : MonoBehaviour
             if (result.MessageType == WebSocketMessageType.Text)
             {
                 string text = System.Text.Encoding.UTF8.GetString(payload);
+                if (text.Contains("\"condition_config\""))
+                {
+                    string backendCondition = ExtractJsonString(text, "avatarCondition", "observer");
+                    mainThreadActions.Enqueue(() => ApplyBackendCondition(backendCondition));
+                    Debug.Log("[VRME] Backend condition received: " + backendCondition);
+                    continue;
+                }
+
                 if (text.Contains("\"audio_stream_start\""))
                 {
                     receivingStream = true;
@@ -1312,6 +1367,42 @@ public class VrmeAtticClient : MonoBehaviour
         }
 
         return int.TryParse(json.Substring(start, end - start), out int value) ? value : fallback;
+    }
+
+    private static string ExtractJsonString(string json, string key, string fallback)
+    {
+        string marker = "\"" + key + "\":";
+        int start = json.IndexOf(marker, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            return fallback;
+        }
+
+        start += marker.Length;
+        while (start < json.Length && char.IsWhiteSpace(json[start]))
+        {
+            start++;
+        }
+
+        if (start >= json.Length || json[start] != '"')
+        {
+            return fallback;
+        }
+
+        start++;
+        int end = json.IndexOf('"', start);
+        return end > start ? json.Substring(start, end - start) : fallback;
+    }
+
+    private void ApplyBackendCondition(string backendCondition)
+    {
+        string normalized = AvatarDominanceBehaviorController.NormalizeCondition(backendCondition);
+        PlayerData.avatarCondition = normalized;
+        AvatarDominanceBehaviorController behavior = GetComponent<AvatarDominanceBehaviorController>();
+        if (behavior != null)
+        {
+            behavior.SetConditionFromBackend(normalized);
+        }
     }
 
     private void BeginPcmStream(int streamSampleRate, int channels)

@@ -238,6 +238,7 @@ GameObject:
   - component: {fileID: 1603518291700351669}
   - component: {fileID: 6259617727028928142}
   - component: {fileID: 1941947703850528845}
+  - component: {fileID: 810000000012}
   - component: {fileID: 810000000010}
   - component: {fileID: 3189897497447258052}
   - component: {fileID: 810000000011}
@@ -294,12 +295,12 @@ MonoBehaviour:
   includeInteractionContext: 1
   autoFindInteractionTrackers: 1
   keyInteractables: []
-  autoAttachInteractionTrackersToSceneObjects: 0
+  autoAttachInteractionTrackersToSceneObjects: 1
   autoAttachAvatarAttentionTracker: 1
   autoDiscoverSceneObjectsForContext: 0
   sendLiveContextOnlyForVoiceTurn: 1
   sceneObjectNameHints: HandTorch,Flashlight,Torch,Airplane,Plane,Stone,Rock,Banana,Fruit,Elephant,Dog,Puppy,Ball,Baseball,Book,Cup,Telescope,ManScreaming,Man,Gun,Sign,Door,Handle,Bar,Key,Switch,Button,Lever,Panel,Light,Exit
-  avatarObjectNameHints: Rocketbox,Female_Adult,Male_Adult,ReadyPlayerMe,DigitalHuman,SocialAgent,Companion,Avatar,Character,Person,Human,NPC,Man,Woman,ManScreaming
+  avatarObjectNameHints: Rocketbox,ReadyPlayerMe,DigitalHuman,SocialAgent,CompanionAvatar
   maxDiscoveredSceneObjects: 20
   maxContextObjectDistance: 25
   playerTransform: {fileID: 0}
@@ -346,6 +347,66 @@ MonoBehaviour:
   rayStartAboveFeet: 0.75
   rayDistance: 4
   maximumCorrection: 1.25
+--- !u!114 &810000000012
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7030998814401213132}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8b7e1e60484c42da8d26ef1a73c5d9b4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  preferredDistance: 2.65
+  minimumDistance: 2.5
+  maximumDistance: 2.8
+  bodyRadius: 0.32
+  bodyHeight: 1.75
+  groundRayHeight: 2.5
+  groundRayDistance: 5
+  maximumFloorDifference: 0.75
+  placementMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  enableNonverbalCues: 1
+  enableHeadGazeCues: 0
+  submissiveBodyAvertedDegrees: 18
+  bodyFacingLerpSpeed: 3.5
+  dominantHeadGazeWeight: 0.2
+  submissiveDirectGazeWeight: 0.12
+  submissiveAvertedGazeWeight: 0.06
+  headGazeLerpSpeed: 1.6
+  submissiveGazeCycleSeconds: 3.2
+  submissiveDirectGazeSeconds: 0.85
+  submissiveGazeSideOffset: 0.55
+  submissiveGazeDownOffset: 0.24
+  enablePostureCues: 1
+  dominantSpinePitchDegrees: -2
+  submissiveSpinePitchDegrees: 3
+  submissiveSpineRollDegrees: 2.5
+  driveAnimatorConditionParameters: 1
+  useExistingIdleIndexFallback: 1
+  existingIdleIndexParameter: IdleAnimIdx2
+  dominantExistingIdleIndex: 0
+  submissiveExistingIdleIndex: 2
+  existingSpeakIndexParameter: SpeakAnimIdx2
+  dominantExistingSpeakIndex: 0
+  submissiveExistingSpeakIndex: 2
+  dominanceFloatParameter: DominanceLevel
+  dominantBoolParameter: IsDominant
+  submissiveBoolParameter: IsSubmissive
+  conditionIntParameter: DominanceCondition
+  gestureTriggerParameter: GestureTrigger
+  crossFadeConditionStates: 0
+  conditionAnimationLayer: 0
+  conditionCrossFadeSeconds: 0.25
+  dominantIdleStateName: Confident Idle
+  submissiveIdleStateName: Nervous Idle
+  dominantGestureStateName: Pointing
+  submissiveGestureStateName: Shrugging
+  playGestureOnConditionChange: 1
 --- !u!114 &810000000010
 MonoBehaviour:
   m_ObjectHideFlags: 0

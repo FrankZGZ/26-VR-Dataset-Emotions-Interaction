@@ -1750,7 +1750,7 @@ Transform:
   m_GameObject: {fileID: 67131400}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: 0, y: 0.05, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -9630,7 +9630,7 @@ Transform:
   m_GameObject: {fileID: 410354648}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.8490164, y: 0.20900479, z: -0.85305184}
+  m_LocalPosition: {x: -0.8490164, y: 0.2590048, z: -0.85305184}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -24258,7 +24258,7 @@ Transform:
   m_GameObject: {fileID: 1083276294}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 2.9107442, y: 0.030016977, z: -0.5928251}
+  m_LocalPosition: {x: 2.9107442, y: 0.08001698, z: -0.5928251}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -29045,10 +29045,12 @@ MonoBehaviour:
   gazeRayMaxDistance: 20
   gazeNearRayAngleDegrees: 14
   gazeLongAttentionThresholdSeconds: 0.5
-  gazeAvatarObjectNameHints: Rocketbox,Female_Adult,Male_Adult,ReadyPlayerMe,DigitalHuman,SocialAgent,Companion,Avatar,Character,Person,Human,NPC,Man,Woman,ManScreaming
+  gazeVoiceMinimumHitSamples: 3
+  gazeVoiceMinimumDwellSeconds: 0.3
+  gazeAvatarObjectNameHints: Rocketbox,ReadyPlayerMe,DigitalHuman,SocialAgent,CompanionAvatar
   autoAttachAvatarGazeTargets: 1
-  forceHideGazeDebugVisuals: 0
-  forceShowGazeDebugVisuals: 1
+  forceHideGazeDebugVisuals: 1
+  forceShowGazeDebugVisuals: 0
   disableHandTrackingObjects: 1
   handTrackingObjectNameHints: OVRHandDataSource,OVRLeftHandVisual,OVRRightHandVisual,OpenXRLeftHand,OpenXRRightHand,HandRayInteractor,HandRay,ControllerRay,ControllerRayInteractor,RayInteractor,OVRHands,UnityXRHands
   sampleOnlyWhileVoiceRecording: 0
@@ -29056,7 +29058,7 @@ MonoBehaviour:
   logRuntimeTrackingState: 1
   writeLiveDebugSnapshot: 1
   runtimeDebugIntervalSeconds: 5
-  showGazeDebugMarker: 1
+  showGazeDebugMarker: 0
   showGazeDebugRay: 0
   showGazeDebugOnlyWhileVoiceSampling: 0
   gazeDebugMarkerSize: 0.12
