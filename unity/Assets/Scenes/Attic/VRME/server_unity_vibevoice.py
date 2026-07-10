@@ -35,7 +35,6 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "groq").strip().lower()
 GROQ_CHAT_MODEL = os.environ.get("GROQ_CHAT_MODEL", "llama-3.1-8b-instant")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.4-mini")
-LLM_REPLY_TIMEOUT_SECONDS = float(os.environ.get("LLM_REPLY_TIMEOUT_SECONDS", "3.0"))
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8080"))
 RESTART_EXISTING_SERVER_ON_PORT = os.environ.get("VRME_RESTART_EXISTING_SERVER_ON_PORT", "1").strip().lower() in ("1", "true", "yes", "on")
@@ -345,7 +344,7 @@ LATENCY_EVENTS_JSONL_PATH = Path(os.environ.get(
     PROJECT_DIR / "latency_events.jsonl",
 ))
 SERVER_RUN_ID = os.environ.get("SERVER_RUN_ID", uuid.uuid4().hex)
-CONVERSATION_MEMORY_TURNS = int(os.environ.get("CONVERSATION_MEMORY_TURNS", "8"))
+CONVERSATION_MEMORY_TURNS = int(os.environ.get("CONVERSATION_MEMORY_TURNS", "0"))
 conversation_memory: dict[str, list[dict[str, str]]] = {}
 
 CURRENT_MODE = "ai"
@@ -851,21 +850,18 @@ async def generate_reply(
             "RESPONSE PRIORITY: Do not merely describe yourself or the avatar condition. Never reveal, name, or discuss "
             "the hidden labels warm, cold, dominant, submissive, dom, sub, observer, personality condition, or experimental condition. "
             "When the user's utterance is short, ambiguous, or social (for example 'you', 'okay', or 'what now'), briefly "
-            "acknowledge it and then use SCENE_BACKGROUND plus the current tracked object states/events to suggest one "
+            "acknowledge it and then use only the current turn observations and guided-task state to suggest one "
             "grounded scene interaction. If no usable tracked interaction is available, ask what the participant can see "
             "instead of inventing an object."
         ),
         (
-            "CONTEXT SEMANTICS: RECENT_RUNTIME_OBSERVATIONS_BEFORE_VOICE describes the latest head/gaze/object attention "
-            "right before the participant pressed the voice key. LIVE_USER_OBSERVATIONS describes attention or orientation during the voice turn only. "
+            "CONTEXT SEMANTICS: LIVE_USER_OBSERVATIONS describes attention or orientation during the current voice trigger window only. "
             "UNITY_CONTEXT_SUMMARY, when present, is the freshest compact Unity state at voice release and has priority for currentAttention and currentHeldObjects. "
             "If UNITY_CONTEXT_SUMMARY says currentHeldObjects=none, do not say the participant is holding or still has any object, even if older history says it was grabbed. "
             "If currentAttention names Avatar/Social Agent, treat that as valid social attention to the avatar, not as missing gaze and not as attention to a nearby object. "
             "Within LIVE_USER_OBSERVATIONS, voiceWindowAttention is the latest valid attention target near voice release and is the highest-priority description of what the participant is currently looking at; "
-            "do not replace it with older targets from RECENT_RUNTIME_OBSERVATIONS_BEFORE_VOICE or with secondary objects from attendedDuringSpeech. "
-            "INTERACTABLE_OBJECT_STATES describes historical tracked object state and is the authority for whether an interaction "
-            "has ever been used; CURRENT_HELD_OBJECTS and currentHeld are the authority for whether the participant is currently holding it. INTERACTION_EVENTS contains actions that actually occurred. Static SCENE_BACKGROUND describes "
-            "the scene designer's arrangement and possible affordances, not the current state. GUIDED_TASK_STATE describes "
+            "do not replace it with older targets or with secondary objects from attendedDuringSpeech. "
+            "CURRENT_HELD_OBJECTS and currentHeld are the authority for whether the participant is currently holding something. GUIDED_TASK_STATE describes "
             "the currently highlighted guided-task object and target; use it to help the participant find the task when "
             "they are unsure. The guided task constrains what should be suggested; do not add extra object affordances beyond "
             "the stated objective and tracked evidence. Keep these categories separate."
@@ -883,23 +879,14 @@ async def generate_reply(
         "Do not list many points unless the user explicitly asks for a list.",
         "Do not omit needed details or end abruptly just to stay short.",
         "Always finish the final sentence cleanly with punctuation; never stop mid-thought.",
-        "Treat this as an ongoing conversation in the same VR session. Use prior turns for continuity, but do not repeat them unless needed.",
+        "Treat each voice trigger's Unity state as fresh. Do not use prior turns as evidence for what the participant is currently seeing or holding.",
         active_tone["prompt"],
     ]
-    if scene_prompt:
-        system_parts.append(
-            "[SCENE_BACKGROUND]\n"
-            "This is the static scene arrangement supplied by the scene designer. Use it to understand the intended "
-            "interaction flow and possible affordances, but not as evidence that an object is currently present, held, "
-            "usable, or already acted upon.\n"
-            f"content: {scene_prompt}\n"
-            "[/SCENE_BACKGROUND]"
-        )
     if scene_context:
         system_parts.append(
             "[CURRENT_TURN_OBSERVATIONS]\n"
-            "Use this VR context actively for context-aware help, especially RECENT_RUNTIME_OBSERVATIONS_BEFORE_VOICE, "
-            "LIVE_USER_OBSERVATIONS, GUIDED_TASK_STATE, currentHeld flags, and recent interaction events. "
+            "Use only this current voice-trigger context for context-aware help: UNITY_CONTEXT_SUMMARY, "
+            "LIVE_USER_OBSERVATIONS, GUIDED_TASK_STATE, and CURRENT_HELD_OBJECTS. "
             "If the participant asks what to do, is unsure, or gives a short utterance, use the highlighted object/target "
             "and the currently attended or held object to suggest one grounded next action. "
             "Head/gaze is attention evidence only, not proof of holding or using. currentHeld=true is the authority for holding. "
@@ -912,9 +899,6 @@ async def generate_reply(
         log(f"[CONTEXT] No live scene context available for tone={tone_name}.")
     if system_parts:
         messages.append({"role": "system", "content": "\n\n".join(system_parts)})
-    if conversation_history and CONVERSATION_MEMORY_TURNS > 0:
-        max_messages = max(0, CONVERSATION_MEMORY_TURNS) * 2
-        messages.extend(conversation_history[-max_messages:])
     messages.append({"role": "user", "content": user_text})
 
     max_tokens = int(os.environ.get("LLM_REPLY_MAX_TOKENS", os.environ.get("GROQ_REPLY_MAX_TOKENS", "300")))
@@ -2079,29 +2063,16 @@ async def websocket_endpoint(websocket: WebSocket):
             log(f"User: {user_text}")
             try:
                 llm_start_at = time.time()
-                reply = await asyncio.wait_for(
-                    generate_reply(
-                        groq_client,
-                        openai_client,
-                        user_text,
-                        scene_prompt,
-                        scene_context,
-                        client_metadata.get("avatarCondition"),
-                        conversation_memory.get(conversation_key(client_metadata), []),
-                    ),
-                    timeout=max(0.1, LLM_REPLY_TIMEOUT_SECONDS),
+                reply = await generate_reply(
+                    groq_client,
+                    openai_client,
+                    user_text,
+                    scene_prompt,
+                    scene_context,
+                    client_metadata.get("avatarCondition"),
+                    conversation_memory.get(conversation_key(client_metadata), []),
                 )
                 llm_seconds = time.time() - llm_start_at
-            except asyncio.TimeoutError:
-                llm_seconds = time.time() - llm_start_at if "llm_start_at" in locals() else 0.0
-                log(f"[LLM] Timed out after {llm_seconds:.3f}s; using context-grounded fallback.")
-                reply = build_context_grounded_fallback_reply(
-                    user_text,
-                    scene_context,
-                    client_metadata.get("sceneName", ""),
-                    client_metadata.get("avatarCondition"),
-                )
-                log(f"[LLM] Context-grounded fallback reply used after timeout. reply={reply}")
             except Exception as exc:
                 log(f"LLM failed: {exc}")
                 reply = build_context_grounded_fallback_reply(

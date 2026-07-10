@@ -413,17 +413,13 @@ public class VrmeAtticClient : MonoBehaviour
             writer.WriteLine(BuildImmediateUnityStateContext());
             writer.WriteLine("[/IMMEDIATE_UNITY_STATE]");
 
-            writer.WriteLine("[RECENT_RUNTIME_OBSERVATIONS_BEFORE_VOICE]");
-            writer.WriteLine(CameraPoseSender.LatestRuntimeContextText);
-            writer.WriteLine("[/RECENT_RUNTIME_OBSERVATIONS_BEFORE_VOICE]");
-
             writer.WriteLine("[LIVE_USER_OBSERVATIONS]");
             writer.WriteLine(CameraPoseSender.LatestVoiceRuntimeContextText);
             writer.WriteLine("[/LIVE_USER_OBSERVATIONS]");
 
             if (includeInteractionContext)
             {
-                writer.WriteLine(BuildSceneContext());
+                writer.WriteLine(BuildCurrentTurnInteractionContext());
             }
 
             return writer.ToString().TrimEnd();
@@ -1549,6 +1545,50 @@ public class VrmeAtticClient : MonoBehaviour
 
             writer.WriteLine(BuildGuidedTaskContext(player, playerPosition));
             return writer.ToString();
+        }
+    }
+
+    private string BuildCurrentTurnInteractionContext()
+    {
+        Transform player = ResolvePlayerTransform();
+        Vector3 playerPosition = player != null ? player.position : Vector3.zero;
+        InteractionTracker[] trackers = ResolveInteractionTrackers();
+        var currentHeldObjects = new List<string>();
+
+        foreach (InteractionTracker tracker in trackers)
+        {
+            if (tracker == null || !tracker.isActiveAndEnabled || tracker.attentionOnlyTarget)
+            {
+                continue;
+            }
+
+            tracker.RefreshCurrentHeldState();
+            if (tracker.isCurrentlyHeld)
+            {
+                currentHeldObjects.Add(tracker.ContextName);
+            }
+        }
+
+        using (var writer = new StringWriter())
+        {
+            writer.WriteLine("[CURRENT_HELD_OBJECTS]");
+            if (currentHeldObjects.Count == 0)
+            {
+                writer.WriteLine("none");
+            }
+            else
+            {
+                currentHeldObjects.Sort(StringComparer.OrdinalIgnoreCase);
+                foreach (string heldObject in currentHeldObjects)
+                {
+                    writer.WriteLine("- " + heldObject);
+                }
+            }
+            writer.WriteLine("authority=Only objects listed above are currently in the participant's hand at this voice trigger.");
+            writer.WriteLine("[/CURRENT_HELD_OBJECTS]");
+
+            writer.WriteLine(BuildGuidedTaskContext(player, playerPosition));
+            return writer.ToString().TrimEnd();
         }
     }
 
