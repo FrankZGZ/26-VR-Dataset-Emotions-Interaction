@@ -35,6 +35,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "groq").strip().lower()
 GROQ_CHAT_MODEL = os.environ.get("GROQ_CHAT_MODEL", "llama-3.1-8b-instant")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.4-mini")
+LLM_REPLY_TIMEOUT_SECONDS = float(os.environ.get("LLM_REPLY_TIMEOUT_SECONDS", "3.0"))
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8080"))
 RESTART_EXISTING_SERVER_ON_PORT = os.environ.get("VRME_RESTART_EXISTING_SERVER_ON_PORT", "1").strip().lower() in ("1", "true", "yes", "on")
@@ -2078,16 +2079,29 @@ async def websocket_endpoint(websocket: WebSocket):
             log(f"User: {user_text}")
             try:
                 llm_start_at = time.time()
-                reply = await generate_reply(
-                    groq_client,
-                    openai_client,
-                    user_text,
-                    scene_prompt,
-                    scene_context,
-                    client_metadata.get("avatarCondition"),
-                    conversation_memory.get(conversation_key(client_metadata), []),
+                reply = await asyncio.wait_for(
+                    generate_reply(
+                        groq_client,
+                        openai_client,
+                        user_text,
+                        scene_prompt,
+                        scene_context,
+                        client_metadata.get("avatarCondition"),
+                        conversation_memory.get(conversation_key(client_metadata), []),
+                    ),
+                    timeout=max(0.1, LLM_REPLY_TIMEOUT_SECONDS),
                 )
                 llm_seconds = time.time() - llm_start_at
+            except asyncio.TimeoutError:
+                llm_seconds = time.time() - llm_start_at if "llm_start_at" in locals() else 0.0
+                log(f"[LLM] Timed out after {llm_seconds:.3f}s; using context-grounded fallback.")
+                reply = build_context_grounded_fallback_reply(
+                    user_text,
+                    scene_context,
+                    client_metadata.get("sceneName", ""),
+                    client_metadata.get("avatarCondition"),
+                )
+                log(f"[LLM] Context-grounded fallback reply used after timeout. reply={reply}")
             except Exception as exc:
                 log(f"LLM failed: {exc}")
                 reply = build_context_grounded_fallback_reply(
