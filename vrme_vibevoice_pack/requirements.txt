@@ -1,6 +1,8 @@
 fastapi
 uvicorn
+websockets
 groq
+openai
 python-dotenv
 numpy
 scipy

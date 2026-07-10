@@ -144,6 +144,19 @@ MonoBehaviour:
   maxRecentInteractionEvents: 5
   playbackAudioSource: {fileID: 5341651195963818920}
   replyGain: 2.2
+  streamReplyAudio: 1
+  avatarCondition: backend
+  streamStartBufferSeconds: 0.08
+  streamMaxSeconds: 45
+  autoIntroOnStart: 1
+  useBackendProactiveIntro: 0
+  autoIntroDelaySeconds: 10
+  textPromptReplyTimeoutSeconds: 60
+  autoIntroPrompt: Please give the participant a brief task briefing for the current
+    VR scene. State the avatar's purpose and the single interaction task they should
+    try before free exploration.
+  enableTaskHighlights: 1
+  sendSceneContextWithConfig: 1
 --- !u!114 &910000000006
 MonoBehaviour:
   m_ObjectHideFlags: 0

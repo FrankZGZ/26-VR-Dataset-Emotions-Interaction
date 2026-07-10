@@ -9199,7 +9199,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0.89
+      value: 0.73
       objectReference: {fileID: 0}
     - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
       propertyPath: m_LocalRotation.w
@@ -22519,6 +22519,12 @@ MonoBehaviour:
   radius: 0.0366
   bounciness: 0.3
   friction: 0.7
+  autoAddGrabComponents: 1
+  keepAboveGround: 1
+  groundSearchHeight: 2
+  groundSearchDistance: 4
+  groundClearance: 0.015
+  maximumSnapUpDistance: 0.6
   hasBeenThrown: 0
   stillThreshold: 2
 --- !u!135 &1057601655
@@ -36466,6 +36472,10 @@ MonoBehaviour:
   refreshAfterTeleport:
   - {fileID: 655334659}
   hideQuestionnaireOnStart: 1
+  enableKeyboardExitTrigger: 1
+  keyboardExitTriggerKey: 101
+  repositionRigForSurvey: 0
+  applyLegacySceneResetAfterSurvey: 0
 --- !u!65 &1629654856
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -42936,6 +42946,8 @@ MonoBehaviour:
   createLikertPageAtRuntime: 1
   autoEnableTaskRaysOnSurveyStart: 1
   allowControllerButtonSubmit: 1
+  positionQuestionnaireInFrontOfCamera: 0
+  samNextButtonPosition: {x: 350, y: -500}
   likertRoot: {fileID: 0}
   likertPanelSize: {x: 980, y: 720}
   likertStartPosition: {x: 52, y: -78}

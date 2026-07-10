@@ -14,6 +14,8 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
     public float preferredDistance = 2.65f;
     public float minimumDistance = 2.5f;
     public float maximumDistance = 2.8f;
+    [Tooltip("Place the avatar from the live headset pose instead of the scene-authored avatar offset.")]
+    public bool placeFromHeadsetPose = true;
 
     [Header("Safe placement")]
     public float bodyRadius = 0.32f;
@@ -22,6 +24,12 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
     public float groundRayDistance = 5f;
     public float maximumFloorDifference = 0.75f;
     public LayerMask placementMask = ~0;
+    [Tooltip("Normalize the avatar's eye height once at scene start so a standing participant is not far above the avatar.")]
+    public bool normalizeAvatarEyeHeight = true;
+    public float defaultAvatarEyeHeight = 1.66f;
+    public float maximumMatchedEyeHeight = 1.82f;
+    public float minimumAvatarScale = 0.95f;
+    public float maximumAvatarScale = 1.22f;
 
     [Header("Nonverbal dominance cues")]
     public bool enableNonverbalCues = true;
@@ -82,6 +90,7 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
     private Transform chestBone;
     private Transform spineBone;
     private float gazePhaseOffset;
+    private float authoredRootY;
     private readonly Dictionary<int, AnimatorControllerParameterType> animatorParameterTypes =
         new Dictionary<int, AnimatorControllerParameterType>();
     private string lastAnimatorCondition = "";
@@ -97,6 +106,7 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
         }
         CacheAnimatorParameters();
         gazePhaseOffset = Random.Range(0f, Mathf.Max(0.01f, submissiveGazeCycleSeconds));
+        authoredRootY = transform.position.y;
 
         for (int i = 0; i < 60; i++)
         {
@@ -110,8 +120,53 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
 
         if (participantHead != null)
         {
+            NormalizeAvatarHeight(participantHead);
             PlaceNearParticipant(participantHead);
         }
+    }
+
+    private void NormalizeAvatarHeight(Transform participantHead)
+    {
+        if (!normalizeAvatarEyeHeight)
+        {
+            return;
+        }
+
+        float currentEyeHeight = ResolveAvatarEyeHeight();
+        if (currentEyeHeight <= 0.5f)
+        {
+            Debug.LogWarning("[VRME] Avatar eye-height normalization skipped; could not resolve avatar height.");
+            return;
+        }
+
+        float participantEyeHeight = Mathf.Max(0f, participantHead.position.y - authoredRootY);
+        float targetEyeHeight = Mathf.Clamp(
+            Mathf.Max(defaultAvatarEyeHeight, participantEyeHeight),
+            defaultAvatarEyeHeight,
+            maximumMatchedEyeHeight);
+        float scaleFactor = Mathf.Clamp(targetEyeHeight / currentEyeHeight, minimumAvatarScale, maximumAvatarScale);
+        transform.localScale = transform.localScale * scaleFactor;
+        bodyHeight *= scaleFactor;
+        Debug.Log("[VRME] Avatar eye height normalized. currentEyeHeight=" + currentEyeHeight.ToString("0.00") +
+            ", participantEyeHeight=" + participantEyeHeight.ToString("0.00") +
+            ", targetEyeHeight=" + targetEyeHeight.ToString("0.00") +
+            ", scaleFactor=" + scaleFactor.ToString("0.00"));
+    }
+
+    private float ResolveAvatarEyeHeight()
+    {
+        if (headBone != null)
+        {
+            return Mathf.Abs(headBone.position.y - transform.position.y);
+        }
+
+        Bounds bounds;
+        if (TryGetRendererBounds(gameObject, out bounds))
+        {
+            return Mathf.Max(0.5f, bounds.size.y * 0.92f);
+        }
+
+        return bodyHeight * 0.92f;
     }
 
     private void LateUpdate()
@@ -147,18 +202,28 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
 
     private void PlaceNearParticipant(Transform participantHead)
     {
+        Vector3 headsetForward = participantHead.forward;
+        headsetForward.y = 0f;
+        if (headsetForward.sqrMagnitude < 0.01f)
+        {
+            headsetForward = Vector3.forward;
+        }
+        else
+        {
+            headsetForward.Normalize();
+        }
+
         Vector3 authoredDirection = transform.position - participantHead.position;
         authoredDirection.y = 0f;
         float authoredDistance = authoredDirection.magnitude;
-        if (authoredDistance < 0.1f)
+        if (authoredDistance >= 0.1f)
         {
-            authoredDirection = participantHead.forward;
-            authoredDirection.y = 0f;
+            authoredDirection.Normalize();
         }
-        authoredDirection.Normalize();
 
         // Preserve a correctly authored location whenever it is already in range.
-        if (authoredDistance >= minimumDistance && authoredDistance <= maximumDistance &&
+        if (!placeFromHeadsetPose &&
+            authoredDistance >= minimumDistance && authoredDistance <= maximumDistance &&
             TryResolveGround(transform.position, participantHead, out Vector3 authoredGround) &&
             IsSafe(authoredGround, participantHead))
         {
@@ -168,12 +233,14 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
 
         float[] distances = { preferredDistance, maximumDistance, minimumDistance };
         float[] angles = { 0f, 12f, -12f, 24f, -24f, 36f, -36f, 50f, -50f, 70f, -70f, 90f, -90f };
+        Vector3 baseDirection = placeFromHeadsetPose ? headsetForward : authoredDirection;
         foreach (float distance in distances)
         {
             foreach (float angle in angles)
             {
-                Vector3 direction = Quaternion.Euler(0f, angle, 0f) * authoredDirection;
+                Vector3 direction = Quaternion.Euler(0f, angle, 0f) * baseDirection;
                 Vector3 candidate = participantHead.position + direction * distance;
+                candidate.y = authoredRootY;
                 if (!TryResolveGround(candidate, participantHead, out Vector3 groundedCandidate))
                 {
                     continue;
@@ -199,14 +266,15 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
         Transform participantHead,
         out Vector3 groundedCandidate)
     {
+        Vector3 rayOrigin = new Vector3(horizontalCandidate.x, authoredRootY + groundRayHeight, horizontalCandidate.z);
         RaycastHit[] hits = Physics.RaycastAll(
-            horizontalCandidate + Vector3.up * groundRayHeight,
+            rayOrigin,
             Vector3.down,
             groundRayDistance,
             placementMask,
             QueryTriggerInteraction.Ignore);
 
-        float expectedFloorY = participantHead.position.y - 1.65f;
+        float expectedFloorY = authoredRootY;
         float bestScore = float.PositiveInfinity;
         groundedCandidate = default;
         foreach (RaycastHit hit in hits)
@@ -267,6 +335,37 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
         }
 
         return true;
+    }
+
+    private static bool TryGetRendererBounds(GameObject root, out Bounds bounds)
+    {
+        bounds = default;
+        if (root == null)
+        {
+            return false;
+        }
+
+        Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+        bool hasBounds = false;
+        foreach (Renderer renderer in renderers)
+        {
+            if (renderer == null)
+            {
+                continue;
+            }
+
+            if (!hasBounds)
+            {
+                bounds = renderer.bounds;
+                hasBounds = true;
+            }
+            else
+            {
+                bounds.Encapsulate(renderer.bounds);
+            }
+        }
+
+        return hasBounds;
     }
 
     public void SetConditionFromBackend(string backendCondition)
@@ -488,11 +587,39 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
         {
             return "sub";
         }
+        if (normalized == "warm" || normalized == "warm_avatar" || normalized == "warm-companion" ||
+            normalized == "warm_companion" || normalized == "supportive" || normalized == "supportive_companion" ||
+            normalized == "companion" || normalized == "emotional")
+        {
+            return "warm";
+        }
+        if (normalized == "cold" || normalized == "cold_avatar" || normalized == "cold-observer" ||
+            normalized == "cold_observer" || normalized == "distant")
+        {
+            return "cold";
+        }
+        if (normalized == "backend")
+        {
+            return "backend";
+        }
+        if (normalized == "context_aware" || normalized == "context-aware" ||
+            normalized == "context_aware_guide" || normalized == "context-aware-guide" ||
+            normalized == "context" || normalized == "guide" || normalized == "informational" ||
+            normalized == "appraisal")
+        {
+            return "context_aware";
+        }
         return "observer";
     }
 
     private static Transform FindParticipantHead()
     {
+        GameObject centerEyeAnchor = GameObject.Find("OVRCameraRig/TrackingSpace/CenterEyeAnchor");
+        if (centerEyeAnchor != null && centerEyeAnchor.activeInHierarchy)
+        {
+            return centerEyeAnchor.transform;
+        }
+
         Camera mainCamera = Camera.main;
         if (mainCamera != null && mainCamera.isActiveAndEnabled)
         {

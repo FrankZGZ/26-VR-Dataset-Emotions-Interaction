@@ -62,10 +62,25 @@ public class SAMSurveyEvents : MonoBehaviour
     {
         RemoveLegacyLoadingVisuals();
 
-        // The parent SAMTask is already inactive in each experiment scene and is
-        // enabled by TeleportationEventListener. Disabling this child here would
-        // immediately hide it again on its first activation.
+        // Keep this child active, but force its SAMTask parent off at scene entry.
+        // TeleportationEventListener re-enables the parent when the guided task ends.
+        HideParentQuestionnaireOnSceneEntry();
         hiddenOnSceneStart = true;
+    }
+
+    private void HideParentQuestionnaireOnSceneEntry()
+    {
+        if (!hideQuestionnaireOnSceneStart || transform.parent == null || Time.timeSinceLevelLoad > 0.5f)
+        {
+            return;
+        }
+
+        GameObject parentObject = transform.parent.gameObject;
+        if (parentObject != null && parentObject.name.IndexOf("SAMTask", System.StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            parentObject.SetActive(false);
+            Debug.Log("[Survey] SAMTask parent hidden on scene entry by SAMSurveyEvents.");
+        }
     }
 
     private void RemoveLegacyLoadingVisuals()

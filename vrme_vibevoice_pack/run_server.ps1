@@ -1,6 +1,17 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
+$port = 8080
+$existingListener = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($existingListener) {
+    $pidOnPort = $existingListener.OwningProcess
+    $processOnPort = Get-Process -Id $pidOnPort -ErrorAction SilentlyContinue
+    $processName = if ($processOnPort) { $processOnPort.ProcessName } else { "unknown" }
+    Write-Host "VRME server port $port is already in use by PID $pidOnPort ($processName). Restarting it now..."
+    Stop-Process -Id $pidOnPort -Force
+    Start-Sleep -Milliseconds 500
+}
+
 $defaultCacheRoot = "D:\leetcode\model-cache"
 if (-not $env:HF_HOME) {
     $env:HF_HOME = Join-Path $defaultCacheRoot "huggingface"

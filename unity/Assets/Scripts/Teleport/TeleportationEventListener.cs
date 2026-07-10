@@ -1,4 +1,6 @@
 using UnityEngine;
+using System.Collections;
+using UnityEngine.SceneManagement;
 using UnityEngine.XR.Interaction.Toolkit;
 using Unity.XR.CoreUtils;
 public class TeleportationEventListener : MonoBehaviour
@@ -20,12 +22,21 @@ public class TeleportationEventListener : MonoBehaviour
     [Header("Keyboard testing")]
     public bool enableKeyboardExitTrigger = true;
     public KeyCode keyboardExitTriggerKey = KeyCode.E;
-    [Tooltip("Move the XR rig to the scene's original questionnaire viewing point.")]
-    public bool repositionRigForSurvey = true;
+    [Tooltip("Move the XR rig to the scene's original questionnaire viewing point. Keep disabled during VR gameplay so the participant camera height/position is never changed by the survey trigger.")]
+    public bool repositionRigForSurvey = false;
     [Tooltip("Legacy behavior that teleports the rig and resets scene objects. Keep disabled when showing the in-scene SAM/ASAQ UI.")]
     public bool applyLegacySceneResetAfterSurvey = false;
     private bool questionnaireTriggered;
     private float colliderTriggerArmedAt;
+
+    private void Awake()
+    {
+        if (hideQuestionnaireOnStart)
+        {
+            HideQuestionnaireOnSceneEntry();
+            StartCoroutine(HideQuestionnaireStartupObjectsForOpeningFrames());
+        }
+    }
 
     private void Start()
     {
@@ -33,9 +44,9 @@ public class TeleportationEventListener : MonoBehaviour
         // trigger. Ignore that initial overlap so SAM does not appear at startup.
         colliderTriggerArmedAt = Time.unscaledTime + 1.5f;
 
-        if (hideQuestionnaireOnStart && samTask != null)
+        if (hideQuestionnaireOnStart)
         {
-            samTask.SetActive(false);
+            HideQuestionnaireOnSceneEntry();
         }
 
         if (locomotionSystem != null)
@@ -126,6 +137,206 @@ public class TeleportationEventListener : MonoBehaviour
         {
             TeleportToOrigin();
         }
+    }
+
+    public void TriggerQuestionnaireFromGuidedTask()
+    {
+        TriggerQuestionnaire("guided task completion");
+    }
+
+    public void HideQuestionnaireForGuidedTask()
+    {
+        HideQuestionnaireOnSceneEntry();
+    }
+
+    private void HideQuestionnaireOnSceneEntry()
+    {
+        if (samTask != null)
+        {
+            samTask.SetActive(false);
+        }
+
+        if (leftTaskRay != null)
+        {
+            leftTaskRay.SetActive(false);
+        }
+
+        if (rightTaskRay != null)
+        {
+            rightTaskRay.SetActive(false);
+        }
+
+        HideNamedQuestionnaireObjectsInLoadedScene();
+        HideStartupRayComponentsInLoadedScene();
+    }
+
+    private IEnumerator HideQuestionnaireStartupObjectsForOpeningFrames()
+    {
+        float endTime = Time.unscaledTime + 1.5f;
+        while (Time.unscaledTime < endTime)
+        {
+            HideQuestionnaireOnSceneEntry();
+            yield return null;
+        }
+    }
+
+    private static void HideNamedQuestionnaireObjectsInLoadedScene()
+    {
+        GameObject[] allObjects = Resources.FindObjectsOfTypeAll<GameObject>();
+        foreach (GameObject obj in allObjects)
+        {
+            if (obj == null || !obj.scene.IsValid() || !obj.scene.isLoaded)
+            {
+                continue;
+            }
+
+            if (!IsStartupHiddenObjectName(obj.name) || !obj.activeSelf)
+            {
+                continue;
+            }
+
+            GameObject objectToHide = ResolveStartupHiddenRoot(obj);
+            if (objectToHide != null && objectToHide.activeSelf)
+            {
+                objectToHide.SetActive(false);
+                Debug.Log("[Survey] Hidden startup UI/ray object on scene entry: " + objectToHide.name);
+            }
+        }
+    }
+
+    private static void HideStartupRayComponentsInLoadedScene()
+    {
+        Behaviour[] behaviours = Resources.FindObjectsOfTypeAll<Behaviour>();
+        foreach (Behaviour behaviour in behaviours)
+        {
+            if (behaviour == null || !behaviour.gameObject.scene.IsValid() || !behaviour.gameObject.scene.isLoaded)
+            {
+                continue;
+            }
+
+            if (IsStartupRayVisualBehaviour(behaviour) && behaviour.enabled)
+            {
+                behaviour.enabled = false;
+                Debug.Log("[Survey] Disabled startup ray behaviour: " + behaviour.GetType().Name + " on " + behaviour.gameObject.name);
+            }
+        }
+
+        LineRenderer[] lineRenderers = Resources.FindObjectsOfTypeAll<LineRenderer>();
+        foreach (LineRenderer lineRenderer in lineRenderers)
+        {
+            if (lineRenderer == null || !lineRenderer.gameObject.scene.IsValid() || !lineRenderer.gameObject.scene.isLoaded)
+            {
+                continue;
+            }
+
+            if (!IsQuestionnaireTaskRay(lineRenderer.gameObject) && lineRenderer.enabled)
+            {
+                lineRenderer.enabled = false;
+                Debug.Log("[Survey] Disabled startup ray line renderer on " + lineRenderer.gameObject.name);
+            }
+        }
+    }
+
+    private static bool IsStartupRayVisualBehaviour(Behaviour behaviour)
+    {
+        string typeName = behaviour.GetType().Name;
+        return (typeName.IndexOf("LineVisual", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                typeName.IndexOf("RayVisual", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                typeName.IndexOf("InteractorDebugVisual", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                typeName.IndexOf("TubeRenderer", System.StringComparison.OrdinalIgnoreCase) >= 0) &&
+               !IsQuestionnaireTaskRay(behaviour.gameObject);
+    }
+
+    private static bool IsQuestionnaireTaskRay(GameObject obj)
+    {
+        Transform current = obj != null ? obj.transform : null;
+        while (current != null)
+        {
+            if (string.Equals(current.name, "LeftXRTaskRay", System.StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(current.name, "RightXRTaskRay", System.StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            current = current.parent;
+        }
+
+        return false;
+    }
+
+    private static bool IsLikelyStartupRayHierarchy(Transform transformToCheck)
+    {
+        Transform current = transformToCheck;
+        while (current != null)
+        {
+            string objectName = current.name;
+            if (!string.IsNullOrWhiteSpace(objectName) &&
+                (objectName.IndexOf("Ray", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 objectName.IndexOf("Cursor", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 objectName.IndexOf("Pointer", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 objectName.IndexOf("Interactor", System.StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                return true;
+            }
+
+            current = current.parent;
+        }
+
+        return false;
+    }
+
+    private static bool IsStartupHiddenObjectName(string objectName)
+    {
+        if (string.IsNullOrWhiteSpace(objectName))
+        {
+            return false;
+        }
+
+        return string.Equals(objectName, "SAMTask", System.StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(objectName, "SurveySAM", System.StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(objectName, "SurveySlider", System.StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(objectName, "LeftXRTaskRay", System.StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(objectName, "RightXRTaskRay", System.StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(objectName, "ArcVisual", System.StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(objectName, "ArcVisuals", System.StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(objectName, "ProceduralArc", System.StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(objectName, "InteractorDebugVisual", System.StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(objectName, "TurnVisuals", System.StringComparison.OrdinalIgnoreCase) ||
+               objectName.IndexOf("ControllerRay", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+               objectName.IndexOf("HandRay", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+               objectName.IndexOf("RaycasterCursorVisual", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+               objectName.IndexOf("OculusCursor", System.StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static GameObject ResolveStartupHiddenRoot(GameObject obj)
+    {
+        if (string.Equals(obj.name, "LeftXRTaskRay", System.StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(obj.name, "RightXRTaskRay", System.StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(obj.name, "ArcVisual", System.StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(obj.name, "ArcVisuals", System.StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(obj.name, "ProceduralArc", System.StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(obj.name, "InteractorDebugVisual", System.StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(obj.name, "TurnVisuals", System.StringComparison.OrdinalIgnoreCase) ||
+            obj.name.IndexOf("ControllerRay", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+            obj.name.IndexOf("HandRay", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+            obj.name.IndexOf("RaycasterCursorVisual", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+            obj.name.IndexOf("OculusCursor", System.StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return obj;
+        }
+
+        Transform current = obj.transform;
+        while (current != null)
+        {
+            if (string.Equals(current.name, "SAMTask", System.StringComparison.OrdinalIgnoreCase))
+            {
+                return current.gameObject;
+            }
+
+            current = current.parent;
+        }
+
+        return obj;
     }
 
     private bool IsPlayerCollider(Collider other)

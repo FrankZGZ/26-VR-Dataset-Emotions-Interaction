@@ -22,7 +22,7 @@ public static class VRMERocketboxPrefabBuilder
 
     private static void CreatePrefabIfNeeded()
     {
-        CreatePrefab(forceOverwrite: true);
+        CreatePrefab(forceOverwrite: false);
     }
 
     private static void CreatePrefab(bool forceOverwrite)
@@ -94,13 +94,17 @@ public static class VRMERocketboxPrefabBuilder
         client.maxRecentInteractionEvents = 5;
         client.playbackAudioSource = audioSource;
         client.streamReplyAudio = true;
-        client.avatarCondition = "backend";
+        client.avatarCondition = "context_aware";
         client.streamStartBufferSeconds = 0.18f;
         client.streamMaxSeconds = 45;
-        client.autoIntroOnStart = false;
+        client.autoIntroOnStart = true;
+        client.useBackendProactiveIntro = true;
         client.autoIntroDelaySeconds = 10f;
+        client.textPromptReplyTimeoutSeconds = 60f;
         client.autoIntroPrompt =
-            "Please introduce this VR scene to the participant. Describe the current environment, explain which interaction states or constraints are relevant, and state the task they should focus on. Keep it calm, clear, and complete without ending abruptly.";
+            "Please give the participant a brief task briefing for the current VR scene. State the avatar's purpose and the single interaction task they should try before free exploration.";
+        client.enableTaskHighlights = true;
+        client.sendSceneContextWithConfig = true;
         client.replyGain = 2.2f;
 
         FaceCameraOnYAxis faceCamera = root.AddComponent<FaceCameraOnYAxis>();

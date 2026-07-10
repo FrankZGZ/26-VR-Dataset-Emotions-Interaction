@@ -19,7 +19,7 @@ public class VrmeAtticClient : MonoBehaviour
     public OVRInput.Controller recordController = OVRInput.Controller.RTouch;
     public int sampleRate = 16000;
     public int maxRecordSeconds = 12;
-    public bool autoConnectOnStart = true;
+    public bool autoConnectOnStart = false;
     public float connectTimeoutSeconds = 3f;
     public bool showRuntimeMarker = true;
     public Color markerColor = new Color(0.1f, 0.6f, 1f, 1f);
@@ -42,14 +42,23 @@ public class VrmeAtticClient : MonoBehaviour
     public AudioSource playbackAudioSource;
     [Range(0.1f, 5f)] public float replyGain = 2.2f;
     public bool streamReplyAudio = true;
-    [Tooltip("Personality is controlled only by the backend .env ELEVENLABS_TONE_PRESET.")]
+    [Tooltip("Avatar condition sent to the backend when PlayerData has not already been set. Use backend to let the server .env choose warm/cold.")]
     public string avatarCondition = "backend";
     [Range(0.02f, 1f)] public float streamStartBufferSeconds = 0.08f;
     [Range(5, 120)] public int streamMaxSeconds = 45;
-    public bool autoIntroOnStart = false;
-    [Range(0f, 60f)] public float autoIntroDelaySeconds = 3f;
+    public bool autoIntroOnStart = true;
+    [Tooltip("Legacy server-push mode. Keep this off; the reliable path sends one auto briefing request after the delay.")]
+    public bool useBackendProactiveIntro = false;
+    [Range(0f, 60f)] public float autoIntroDelaySeconds = 10f;
+    [Range(5f, 120f)] public float textPromptReplyTimeoutSeconds = 60f;
     [TextArea(3, 8)] public string autoIntroPrompt =
-        "Please introduce this VR scene to the participant. Describe the current environment, explain which interaction states or constraints are relevant, and state the task they should focus on. Keep it calm, clear, and complete without ending abruptly.";
+        "Please give the participant a brief task briefing for the current VR scene. State the avatar's purpose and the single interaction task they should try before free exploration.";
+    public bool enableTaskHighlights = true;
+    [Tooltip("Send scene context with the initial config so backend proactive guidance can be context-aware without showing highlights early.")]
+    public bool sendSceneContextWithConfig = true;
+    public Color taskObjectHighlightColor = new Color(1f, 0.82f, 0.1f, 1f);
+    public Color taskTargetHighlightColor = new Color(0.1f, 0.95f, 1f, 1f);
+    [Range(1f, 10f)] public float taskObjectOutlineWidth = 6f;
 
     private readonly ConcurrentQueue<Action> mainThreadActions = new ConcurrentQueue<Action>();
     private readonly ConcurrentQueue<byte[]> pendingAudioTurns = new ConcurrentQueue<byte[]>();
@@ -61,8 +70,16 @@ public class VrmeAtticClient : MonoBehaviour
     private AudioClip recordingClip;
     private bool isRecording;
     private bool isSending;
+    private bool isReceivingBackendProactiveIntro;
     private bool recordKeyWasDown;
     private bool autoIntroSent;
+    private bool taskHighlightsActivated;
+    private bool guidedTaskActive;
+    private bool guidedTaskCompleted;
+    private SceneTaskHighlightSpec activeGuidedTaskSpec;
+    private readonly List<GameObject> activeGuidedTaskObjects = new List<GameObject>();
+    private readonly List<GameObject> activeGuidedTaskTargets = new List<GameObject>();
+    private readonly List<GameObject> activeGuidedTaskMarkers = new List<GameObject>();
 
     private void Start()
     {
@@ -73,7 +90,12 @@ public class VrmeAtticClient : MonoBehaviour
         }
         streamingPlayer = new StreamingPcmPlayer();
         InteractionTracker.ClearRecentEvents();
-        PlayerData.avatarCondition = "backend";
+        if (string.IsNullOrWhiteSpace(PlayerData.avatarCondition) ||
+            string.Equals(PlayerData.avatarCondition, "unset", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(PlayerData.avatarCondition, "backend", StringComparison.OrdinalIgnoreCase))
+        {
+            PlayerData.avatarCondition = NormalizeAvatarConditionForBackend(avatarCondition);
+        }
 
         Debug.Log("[VRME] Client started. recordKey=" + (enableKeyboardRecordKey ? recordKey.ToString() : "disabled") +
             ", controllerRecordButton=" + (enableControllerRecordButton ? recordController + "/" + recordControllerButton : "disabled") +
@@ -98,7 +120,7 @@ public class VrmeAtticClient : MonoBehaviour
             CreateRuntimeMarker();
         }
 
-        if (autoConnectOnStart)
+        if (autoConnectOnStart && !autoIntroOnStart)
         {
             _ = ConnectAndSyncBackendConditionAsync();
         }
@@ -106,6 +128,20 @@ public class VrmeAtticClient : MonoBehaviour
         if (autoIntroOnStart)
         {
             _ = RunAutoIntroAsync();
+        }
+
+        if (!useBackendProactiveIntro && enableTaskHighlights && string.Equals(SceneManager.GetActiveScene().name, "Tunnel", StringComparison.OrdinalIgnoreCase))
+        {
+            _ = ActivateSceneTaskHighlightsAfterDelayAsync(1f);
+        }
+    }
+
+    private async Task ActivateSceneTaskHighlightsAfterDelayAsync(float delaySeconds)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(Mathf.Max(0f, delaySeconds)));
+        if (isActiveAndEnabled && enableTaskHighlights && !taskHighlightsActivated)
+        {
+            ActivateSceneTaskHighlights();
         }
     }
 
@@ -119,27 +155,47 @@ public class VrmeAtticClient : MonoBehaviour
                 return;
             }
 
+            Debug.Log("[VRME] Startup backend sync connected; sending scene config now. backendProactive=" + useBackendProactiveIntro);
             await SendConfigAsync();
-            byte[] buffer = new byte[1024];
-            WebSocketReceiveResult result = await websocket.ReceiveAsync(
-                new ArraySegment<byte>(buffer),
-                cancellation.Token);
-            if (result.MessageType != WebSocketMessageType.Text)
-            {
-                return;
-            }
+            Debug.Log("[VRME] Startup scene config send completed. backendProactive=" + useBackendProactiveIntro);
 
-            string text = System.Text.Encoding.UTF8.GetString(buffer, 0, result.Count);
-            if (text.Contains("\"condition_config\""))
+            if (useBackendProactiveIntro)
             {
-                string backendCondition = ExtractJsonString(text, "avatarCondition", "observer");
-                mainThreadActions.Enqueue(() => ApplyBackendCondition(backendCondition));
-                Debug.Log("[VRME] Initial backend condition received: " + backendCondition);
+                isReceivingBackendProactiveIntro = true;
+                try
+                {
+                    Task receiveTask = ReceiveReplyAsync();
+                    Task timeoutTask = Task.Delay(TimeSpan.FromSeconds(Mathf.Max(5f, autoIntroDelaySeconds + textPromptReplyTimeoutSeconds)));
+                    Task completedTask = await Task.WhenAny(receiveTask, timeoutTask);
+                    if (completedTask == receiveTask)
+                    {
+                        await receiveTask;
+                    }
+                    else
+                    {
+                        Debug.LogWarning("[VRME] Backend proactive guide receive timed out.");
+                    }
+                }
+                finally
+                {
+                    isReceivingBackendProactiveIntro = false;
+                }
+            }
+            else
+            {
+                Task receiveTask = ReceiveReplyAsync();
+                Task timeoutTask = Task.Delay(TimeSpan.FromSeconds(Mathf.Max(5f, textPromptReplyTimeoutSeconds)));
+                Task completedTask = await Task.WhenAny(receiveTask, timeoutTask);
+                if (completedTask == receiveTask)
+                {
+                    await receiveTask;
+                }
             }
         }
         catch (Exception ex)
         {
             Debug.LogWarning("[VRME] Could not synchronize backend condition at startup: " + ex.Message);
+            isReceivingBackendProactiveIntro = false;
         }
     }
 
@@ -163,6 +219,7 @@ public class VrmeAtticClient : MonoBehaviour
 
         recordKeyWasDown = recordInputIsDown;
         streamingPlayer?.Update();
+        CheckGuidedTaskCompletion();
     }
 
     private void OnGUI()
@@ -265,7 +322,6 @@ public class VrmeAtticClient : MonoBehaviour
                 await websocket.ConnectAsync(new Uri(serverUrl), linked.Token);
             }
             Debug.Log("[VRME] Connected to " + serverUrl);
-            await SendConfigAsync();
         }
         catch (OperationCanceledException)
         {
@@ -301,9 +357,12 @@ public class VrmeAtticClient : MonoBehaviour
             return;
         }
 
-        string sceneContext = sendLiveContextOnlyForVoiceTurn ? "" : BuildSceneContext();
+        string sceneContext = sendSceneContextWithConfig ? BuildSceneContext() : (sendLiveContextOnlyForVoiceTurn ? "" : BuildSceneContext());
         string json =
             "{\"type\":\"config\",\"streamReplyAudio\":" + (streamReplyAudio ? "true" : "false") +
+            ",\"mode\":\"ai\"" +
+            ",\"backendProactiveGuide\":false" +
+            ",\"proactiveGuideDelaySeconds\":" + Mathf.Max(0f, autoIntroDelaySeconds).ToString(System.Globalization.CultureInfo.InvariantCulture) +
             ",\"participantId\":\"" + EscapeJson(PlayerData.participantId) +
             "\",\"loginId\":\"" + EscapeJson(PlayerData.loginId) +
             "\",\"sessionId\":\"" + EscapeJson(PlayerData.sessionId) +
@@ -330,6 +389,14 @@ public class VrmeAtticClient : MonoBehaviour
 
         using (var writer = new StringWriter())
         {
+            writer.WriteLine("[IMMEDIATE_UNITY_STATE]");
+            writer.WriteLine(BuildImmediateUnityStateContext());
+            writer.WriteLine("[/IMMEDIATE_UNITY_STATE]");
+
+            writer.WriteLine("[RECENT_RUNTIME_OBSERVATIONS_BEFORE_VOICE]");
+            writer.WriteLine(CameraPoseSender.LatestRuntimeContextText);
+            writer.WriteLine("[/RECENT_RUNTIME_OBSERVATIONS_BEFORE_VOICE]");
+
             writer.WriteLine("[LIVE_USER_OBSERVATIONS]");
             writer.WriteLine(CameraPoseSender.LatestVoiceRuntimeContextText);
             writer.WriteLine("[/LIVE_USER_OBSERVATIONS]");
@@ -355,7 +422,37 @@ public class VrmeAtticClient : MonoBehaviour
                 WebSocketMessageType.Text,
                 true,
                 cancellation.Token);
-            Debug.Log("[VRME] Sent voice-turn context. chars=" + turnContext.Length + " preview=" + PreviewForLog(turnContext, 900));
+            if (CameraPoseSender.LatestRuntimeContextText.StartsWith("No CameraPoseSender", StringComparison.OrdinalIgnoreCase))
+            {
+                Debug.LogWarning("[VRME] CameraPoseSender has not produced runtime context yet; sent immediate Unity head state fallback.");
+            }
+
+            Debug.Log("[VRME] Sent voice-turn context. chars=" + turnContext.Length + " preview=" + PreviewForLog(turnContext, 1800));
+        }
+    }
+
+    private string BuildImmediateUnityStateContext()
+    {
+        using (var writer = new StringWriter())
+        {
+            writer.WriteLine("sampleUtc=" + DateTime.UtcNow.ToString("o"));
+            writer.WriteLine("sceneName=" + SceneManager.GetActiveScene().name);
+            writer.WriteLine("avatarCondition=" + PlayerData.avatarCondition);
+
+            Transform player = ResolvePlayerTransform();
+            if (player == null)
+            {
+                writer.WriteLine("headSource=none");
+                writer.WriteLine("headPoseAvailable=False");
+                return writer.ToString().TrimEnd();
+            }
+
+            writer.WriteLine("headSource=" + player.name);
+            writer.WriteLine("headPoseAvailable=True");
+            writer.WriteLine("head position=" + FormatVector(player.position));
+            writer.WriteLine("head forward=" + FormatVector(player.forward));
+            writer.WriteLine("head up=" + FormatVector(player.up));
+            return writer.ToString().TrimEnd();
         }
     }
 
@@ -433,49 +530,848 @@ public class VrmeAtticClient : MonoBehaviour
         await SendAudioAsync(wavBytes);
     }
 
-    private async Task RunAutoIntroAsync()
+    private async Task RunAutoIntroAsync(float fallbackGraceSeconds = 0f)
     {
-        await Task.Delay(TimeSpan.FromSeconds(Mathf.Max(0f, autoIntroDelaySeconds)));
-        if (autoIntroSent || !isActiveAndEnabled || string.IsNullOrWhiteSpace(autoIntroPrompt))
+        float delaySeconds = Mathf.Max(0f, autoIntroDelaySeconds + Mathf.Max(0f, fallbackGraceSeconds));
+        Debug.Log("[VRME] Auto briefing fallback armed. delaySeconds=" + delaySeconds +
+            ", backendProactive=" + useBackendProactiveIntro +
+            ", scene=" + SceneManager.GetActiveScene().name);
+        await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+        string introPrompt = BuildAutoTaskBriefingPrompt();
+        if (autoIntroSent || !isActiveAndEnabled || string.IsNullOrWhiteSpace(introPrompt))
+        {
+            Debug.Log("[VRME] Auto briefing fallback skipped. sent=" + autoIntroSent + ", active=" + isActiveAndEnabled + ", hasPrompt=" + !string.IsNullOrWhiteSpace(introPrompt));
+            return;
+        }
+
+        const int maxAutoIntroAttempts = 4;
+        for (int attempt = 1; attempt <= maxAutoIntroAttempts; attempt++)
+        {
+            if (autoIntroSent || !isActiveAndEnabled)
+            {
+                return;
+            }
+
+            Debug.Log("[VRME] Auto briefing fallback sending. scene=" + SceneManager.GetActiveScene().name + ", attempt=" + attempt);
+            bool sent = await SendTextPromptAsync(introPrompt, "auto_briefing");
+            if (sent)
+            {
+                autoIntroSent = true;
+                if (enableTaskHighlights && !taskHighlightsActivated)
+                {
+                    Debug.Log("[VRME] Activating task highlights after auto briefing completed.");
+                    ActivateSceneTaskHighlights();
+                }
+                Debug.Log("[VRME] Auto briefing completed.");
+                return;
+            }
+
+            Debug.LogWarning("[VRME] Auto briefing attempt failed. Will retry if attempts remain. attempt=" + attempt);
+            await Task.Delay(TimeSpan.FromSeconds(2f));
+        }
+
+        Debug.LogWarning("[VRME] Auto briefing failed after retry attempts. It will not be marked sent.");
+    }
+
+    private string BuildAutoTaskBriefingPrompt()
+    {
+        string sceneName = SceneManager.GetActiveScene().name;
+        string taskObjective = GetSceneTaskObjective(sceneName);
+        if (string.IsNullOrWhiteSpace(taskObjective))
+        {
+            return autoIntroPrompt;
+        }
+
+        return
+            "[SYSTEM_AUTO_TASK_BRIEFING]\n" +
+            "Scene: " + sceneName + "\n" +
+            "Task: " + taskObjective + "\n" +
+            "Say only this task introduction in one or two short spoken sentences. Do not ask a reflection question.\n" +
+            "[/SYSTEM_AUTO_TASK_BRIEFING]";
+    }
+
+    private static string GetSceneTaskObjective(string sceneName)
+    {
+        string normalizedName = string.IsNullOrWhiteSpace(sceneName) ? "" : sceneName.Trim().ToLowerInvariant();
+        switch (normalizedName)
+        {
+            case "puppies":
+                return "Use the highlighted tennis ball and throw it toward the highlighted puppy.";
+            case "elephant":
+                return "Use the highlighted banana and throw it toward the highlighted elephant.";
+            case "lake":
+                return "Use the highlighted paper plane and throw it toward the highlighted lake target area.";
+            case "solitaryconfinement":
+                return "Use the highlighted prison object and move or throw it toward the highlighted target area.";
+            case "tunnel":
+                return "Use the highlighted flashlight and move toward the highlighted tunnel position.";
+            case "attic":
+                return "Use the highlighted shield and move behind the highlighted safe position.";
+            default:
+                return "";
+        }
+    }
+
+    private void ActivateSceneTaskHighlights()
+    {
+        if (taskHighlightsActivated)
+        {
+            Debug.Log("[VRME] Task highlights already active. scene=" + SceneManager.GetActiveScene().name);
+            return;
+        }
+
+        string sceneName = SceneManager.GetActiveScene().name;
+        SceneTaskHighlightSpec spec = GetSceneTaskHighlightSpec(sceneName);
+        if (spec == null)
+        {
+            Debug.Log("[VRME] No task highlight spec for scene=" + sceneName);
+            return;
+        }
+
+        activeGuidedTaskSpec = spec;
+        activeGuidedTaskObjects.Clear();
+        activeGuidedTaskTargets.Clear();
+        activeGuidedTaskMarkers.Clear();
+        guidedTaskActive = spec.CompletionMode != GuidedTaskCompletionMode.None;
+        guidedTaskCompleted = false;
+        taskHighlightsActivated = true;
+
+        int objectCount = 0;
+        foreach (string objectName in spec.ObjectNames)
+        {
+            GameObject taskObject = FindSceneObjectByNameHint(objectName);
+            if (taskObject == null)
+            {
+                continue;
+            }
+
+            AddOutlineHighlight(taskObject, taskObjectHighlightColor, taskObjectOutlineWidth);
+            if (!activeGuidedTaskObjects.Contains(taskObject))
+            {
+                activeGuidedTaskObjects.Add(taskObject);
+            }
+            objectCount++;
+        }
+
+        int targetCount = 0;
+        foreach (string targetName in spec.TargetNames)
+        {
+            GameObject targetObject = FindSceneObjectByNameHint(targetName);
+            if (targetObject == null)
+            {
+                continue;
+            }
+
+            AddTargetMarker(targetObject, spec);
+            if (!activeGuidedTaskTargets.Contains(targetObject))
+            {
+                activeGuidedTaskTargets.Add(targetObject);
+            }
+            targetCount++;
+        }
+
+        if (targetCount == 0 && spec.UseRuntimeTargetFromPlayer)
+        {
+            GameObject runtimeTarget = CreateRuntimeGuidedTaskTarget(sceneName, spec);
+            if (runtimeTarget != null)
+            {
+                AddTargetMarker(runtimeTarget, spec);
+                activeGuidedTaskTargets.Add(runtimeTarget);
+                targetCount++;
+            }
+        }
+
+        if (string.Equals(sceneName, "Tunnel", StringComparison.OrdinalIgnoreCase))
+        {
+            HideGuidedTaskSurveyIfNeeded(sceneName);
+        }
+
+        Debug.Log("[VRME] Task highlights active. scene=" + sceneName + ", objects=" + objectCount + ", targets=" + targetCount);
+        if (objectCount == 0)
+        {
+            Debug.LogWarning("[VRME] No task object highlight target found for scene=" + sceneName);
+        }
+        if (targetCount == 0 && spec.TargetNames.Length > 0)
+        {
+            Debug.LogWarning("[VRME] No task target marker found for scene=" + sceneName);
+        }
+    }
+
+    private SceneTaskHighlightSpec GetSceneTaskHighlightSpec(string sceneName)
+    {
+        string normalizedName = string.IsNullOrWhiteSpace(sceneName) ? "" : sceneName.Trim().ToLowerInvariant();
+        switch (normalizedName)
+        {
+            case "puppies":
+                return new SceneTaskHighlightSpec(
+                    new[] { "TennisBall", "BallPoint", "Dog", "Puppy" },
+                    Array.Empty<string>(),
+                    "Dog target",
+                    GuidedTaskCompletionMode.ObjectUsedOnce,
+                    TaskMarkerPlacement.Ground,
+                    0.75f,
+                    0.75f);
+            case "elephant":
+                return new SceneTaskHighlightSpec(
+                    new[] { "banana", "Banana", "Elephant" },
+                    Array.Empty<string>(),
+                    "Elephant target",
+                    GuidedTaskCompletionMode.ObjectUsedOnce,
+                    TaskMarkerPlacement.Ground,
+                    0.75f,
+                    0.75f);
+            case "lake":
+                return new SceneTaskHighlightSpec(
+                    new[] { "PaperPlane", "Airplane", "Plane" },
+                    new[] { "Target" },
+                    "Lake target",
+                    GuidedTaskCompletionMode.ObjectNearTarget,
+                    TaskMarkerPlacement.Ground,
+                    2.25f,
+                    2.4f);
+            case "solitaryconfinement":
+                return new SceneTaskHighlightSpec(
+                    new[] { "Baseball", "Book", "Cup" },
+                    new[] { "Door" },
+                    "Prison door target",
+                    GuidedTaskCompletionMode.ObjectNearTarget,
+                    TaskMarkerPlacement.DoorSurface,
+                    0.2f,
+                    0.42f);
+            case "tunnel":
+                return new SceneTaskHighlightSpec(
+                    new[] { "Flashlight", "HandTorch", "Torch" },
+                    Array.Empty<string>(),
+                    "Tunnel target",
+                    GuidedTaskCompletionMode.PlayerAndObjectNearTarget,
+                    TaskMarkerPlacement.Ground,
+                    1.6f,
+                    1.35f,
+                    true,
+                    3f);
+            case "attic":
+                return new SceneTaskHighlightSpec(
+                    new[] { "Shield", "Shield01" },
+                    new[] { "Target", "Position" },
+                    "Safe position",
+                    GuidedTaskCompletionMode.PlayerAndObjectNearTarget,
+                    TaskMarkerPlacement.Ground,
+                    0.85f,
+                    1.1f);
+            default:
+                return null;
+        }
+    }
+
+    private GameObject CreateRuntimeGuidedTaskTarget(string sceneName, SceneTaskHighlightSpec spec)
+    {
+        Transform player = ResolvePlayerTransform();
+        Vector3 basePosition = player != null ? player.position : transform.position;
+        Vector3 forward = player != null ? player.forward : transform.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.01f)
+        {
+            forward = Vector3.forward;
+        }
+        else
+        {
+            forward.Normalize();
+        }
+
+        Vector3 candidate = basePosition + forward * Mathf.Max(0.5f, spec.RuntimeTargetForwardDistance);
+        candidate = ProjectPointToWalkableGround(candidate, basePosition);
+
+        string runtimeTargetName = "VRME_RuntimeTaskTarget_" + sceneName;
+        GameObject existingTarget = GameObject.Find(runtimeTargetName);
+        if (existingTarget != null)
+        {
+            existingTarget.transform.position = candidate;
+            return existingTarget;
+        }
+
+        GameObject runtimeTarget = new GameObject(runtimeTargetName);
+        runtimeTarget.transform.position = candidate;
+        Debug.Log("[VRME] Runtime task target created. scene=" + sceneName + ", position=" + candidate);
+        return runtimeTarget;
+    }
+
+    private Vector3 ProjectPointToWalkableGround(Vector3 candidate, Vector3 basePosition)
+    {
+        float rayStartY = Mathf.Max(candidate.y, basePosition.y) + 0.75f;
+        RaycastHit hit;
+        if (Physics.Raycast(new Vector3(candidate.x, rayStartY, candidate.z), Vector3.down, out hit, 20f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore) &&
+            hit.normal.y > 0.2f)
+        {
+            return hit.point;
+        }
+
+        if (Physics.Raycast(basePosition + Vector3.up * 0.5f, Vector3.down, out hit, 20f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore) &&
+            hit.normal.y > 0.2f)
+        {
+            candidate.y = hit.point.y;
+            return candidate;
+        }
+
+        candidate.y = basePosition.y > 1f ? basePosition.y - 1.45f : basePosition.y;
+        return candidate;
+    }
+
+    private GameObject FindSceneObjectByNameHint(string nameHint)
+    {
+        if (string.IsNullOrWhiteSpace(nameHint))
+        {
+            return null;
+        }
+
+        Transform[] transforms = FindObjectsByType<Transform>(FindObjectsSortMode.None);
+        GameObject firstContainsMatch = null;
+        foreach (Transform sceneTransform in transforms)
+        {
+            if (sceneTransform == null || !sceneTransform.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            string objectName = sceneTransform.name;
+            if (string.Equals(objectName, nameHint, StringComparison.OrdinalIgnoreCase))
+            {
+                return ResolveHighlightRoot(sceneTransform.gameObject);
+            }
+
+            if (firstContainsMatch == null &&
+                objectName.IndexOf(nameHint, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                firstContainsMatch = ResolveHighlightRoot(sceneTransform.gameObject);
+            }
+        }
+
+        return firstContainsMatch;
+    }
+
+    private GameObject ResolveHighlightRoot(GameObject candidate)
+    {
+        if (candidate == null)
+        {
+            return null;
+        }
+
+        Transform current = candidate.transform;
+        while (current.parent != null)
+        {
+            if (current.GetComponent<InteractionTracker>() != null ||
+                current.GetComponent<Rigidbody>() != null ||
+                current.GetComponent<Collider>() != null)
+            {
+                return current.gameObject;
+            }
+
+            current = current.parent;
+        }
+
+        return candidate;
+    }
+
+    private void AddOutlineHighlight(GameObject target, Color color, float width)
+    {
+        if (target == null)
         {
             return;
         }
 
-        autoIntroSent = true;
-        await SendTextPromptAsync(autoIntroPrompt);
+        Renderer[] renderers = target.GetComponentsInChildren<Renderer>(true);
+        if (renderers.Length == 0)
+        {
+            Debug.LogWarning("[VRME] Highlight target has no renderers: " + target.name);
+            return;
+        }
+
+        Outline outline = target.GetComponent<Outline>();
+        if (outline == null)
+        {
+            outline = target.AddComponent<Outline>();
+        }
+
+        outline.OutlineMode = Outline.Mode.OutlineAll;
+        outline.OutlineColor = color;
+        outline.OutlineWidth = width;
+        outline.enabled = true;
     }
 
-    private async Task SendTextPromptAsync(string textPrompt)
+    private void AddTargetMarker(GameObject target, SceneTaskHighlightSpec spec)
+    {
+        if (target == null)
+        {
+            return;
+        }
+
+        Bounds bounds;
+        bool hasRendererBounds = TryGetRendererBounds(target, out bounds);
+        if (!hasRendererBounds)
+        {
+            bounds = new Bounds(target.transform.position, new Vector3(0.1f, 0.02f, 0.1f));
+        }
+
+        string markerName = "VRME_TaskHighlight_" + target.name;
+        if (GameObject.Find(markerName) != null)
+        {
+            return;
+        }
+
+        bool objectCenterMarker = spec.MarkerPlacement == TaskMarkerPlacement.ObjectCenter;
+        bool doorSurfaceMarker = spec.MarkerPlacement == TaskMarkerPlacement.DoorSurface;
+        GameObject marker = GameObject.CreatePrimitive(objectCenterMarker ? PrimitiveType.Sphere : PrimitiveType.Cylinder);
+        marker.name = markerName;
+        float markerRadius = Mathf.Max(0.12f, spec.MarkerRadius);
+        if (doorSurfaceMarker)
+        {
+            Vector3 surfaceNormal;
+            marker.transform.position = GetDoorSurfaceMarkerPose(target, bounds, out surfaceNormal);
+            marker.transform.rotation = Quaternion.FromToRotation(Vector3.up, surfaceNormal);
+            marker.transform.localScale = new Vector3(markerRadius, 0.012f, markerRadius);
+        }
+        else if (objectCenterMarker)
+        {
+            marker.transform.position = bounds.center;
+            marker.transform.localScale = Vector3.one * markerRadius;
+        }
+        else
+        {
+            float markerY = hasRendererBounds ? bounds.min.y + 0.03f : target.transform.position.y + 0.06f;
+            marker.transform.position = new Vector3(bounds.center.x, markerY, bounds.center.z);
+            marker.transform.localScale = new Vector3(markerRadius, 0.035f, markerRadius);
+        }
+
+        Collider markerCollider = marker.GetComponent<Collider>();
+        if (markerCollider != null)
+        {
+            Destroy(markerCollider);
+        }
+
+        Renderer markerRenderer = marker.GetComponent<Renderer>();
+        if (markerRenderer != null)
+        {
+            markerRenderer.material = CreateTaskHighlightMaterial();
+        }
+
+        GameObject lightObject = new GameObject(markerName + "_Light");
+        lightObject.transform.SetParent(marker.transform, false);
+        lightObject.transform.localPosition = Vector3.up * 0.5f;
+        Light light = lightObject.AddComponent<Light>();
+        light.type = LightType.Point;
+        light.color = taskTargetHighlightColor;
+        light.intensity = 1.3f;
+        light.range = Mathf.Max(1.2f, markerRadius * 2.2f);
+        light.shadows = LightShadows.None;
+        light.renderMode = LightRenderMode.ForcePixel;
+        activeGuidedTaskMarkers.Add(marker);
+    }
+
+    private Vector3 GetDoorSurfaceMarkerPosition(GameObject target, Bounds bounds)
+    {
+        Vector3 surfaceNormal;
+        return GetDoorSurfaceMarkerPose(target, bounds, out surfaceNormal);
+    }
+
+    private Vector3 GetDoorSurfaceMarkerPose(GameObject target, Bounds bounds, out Vector3 surfaceNormal)
+    {
+        Vector3 markerPosition = bounds.center + Vector3.up * Mathf.Min(0.2f, bounds.size.y * 0.08f);
+        Transform player = ResolvePlayerTransform();
+        if (player != null)
+        {
+            Vector3 direction = markerPosition - player.position;
+            if (direction.sqrMagnitude > 0.01f &&
+                Physics.Raycast(
+                    player.position,
+                    direction.normalized,
+                    out RaycastHit hit,
+                    Mathf.Max(2f, direction.magnitude + 2f),
+                    Physics.DefaultRaycastLayers,
+                    QueryTriggerInteraction.Ignore))
+            {
+                surfaceNormal = hit.normal.sqrMagnitude > 0.01f ? hit.normal.normalized : -direction.normalized;
+                return hit.point + surfaceNormal * 0.035f;
+            }
+        }
+
+        surfaceNormal = GetDoorSurfaceDirectionToPlayer(markerPosition);
+        return markerPosition + surfaceNormal * 0.08f;
+    }
+
+    private Vector3 GetDoorSurfaceDirectionToPlayer(Vector3 markerPosition)
+    {
+        Transform player = ResolvePlayerTransform();
+        if (player == null)
+        {
+            return transform.forward.sqrMagnitude > 0.01f ? transform.forward.normalized : Vector3.forward;
+        }
+
+        Vector3 directionToPlayer = player.position - markerPosition;
+        directionToPlayer.y = 0f;
+        if (directionToPlayer.sqrMagnitude < 0.01f)
+        {
+            return transform.forward.sqrMagnitude > 0.01f ? transform.forward.normalized : Vector3.forward;
+        }
+
+        return directionToPlayer.normalized;
+    }
+
+    private void CheckGuidedTaskCompletion()
+    {
+        if (!guidedTaskActive || guidedTaskCompleted || activeGuidedTaskSpec == null)
+        {
+            return;
+        }
+
+        if (activeGuidedTaskTargets.Count == 0 || activeGuidedTaskObjects.Count == 0)
+        {
+            return;
+        }
+
+        switch (activeGuidedTaskSpec.CompletionMode)
+        {
+            case GuidedTaskCompletionMode.ObjectUsedOnce:
+                if (AnyTaskObjectUsedOnce())
+                {
+                    CompleteGuidedTask("object_used_once");
+                }
+                break;
+            case GuidedTaskCompletionMode.ObjectNearTarget:
+                if (AnyTaskObjectNearAnyTarget(activeGuidedTaskSpec.CompletionRadius, requirePriorUse: true))
+                {
+                    CompleteGuidedTask("object_near_target");
+                }
+                break;
+            case GuidedTaskCompletionMode.PlayerAndObjectNearTarget:
+                if (IsPlayerAndUsedObjectNearTarget(activeGuidedTaskSpec.CompletionRadius))
+                {
+                    CompleteGuidedTask("player_and_object_near_target");
+                }
+                break;
+        }
+    }
+
+    private bool AnyTaskObjectNearAnyTarget(float radius, bool requirePriorUse)
+    {
+        float sqrRadius = radius * radius;
+        foreach (GameObject taskObject in activeGuidedTaskObjects)
+        {
+            if (taskObject == null || (requirePriorUse && !WasTaskObjectUsed(taskObject)))
+            {
+                continue;
+            }
+
+            Vector3 objectPosition = taskObject.transform.position;
+            foreach (GameObject target in activeGuidedTaskTargets)
+            {
+                if (target == null)
+                {
+                    continue;
+                }
+
+                if ((objectPosition - GetTargetCompletionPoint(target)).sqrMagnitude <= sqrRadius)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private bool IsPlayerAndUsedObjectNearTarget(float radius)
+    {
+        Transform player = ResolvePlayerTransform();
+        if (player == null)
+        {
+            return false;
+        }
+
+        float sqrRadius = radius * radius;
+        foreach (GameObject target in activeGuidedTaskTargets)
+        {
+            if (target == null)
+            {
+                continue;
+            }
+
+            Vector3 targetPoint = GetTargetCompletionPoint(target);
+            Vector3 playerPosition = player.position;
+            playerPosition.y = targetPoint.y;
+            if ((playerPosition - targetPoint).sqrMagnitude > sqrRadius)
+            {
+                continue;
+            }
+
+            foreach (GameObject taskObject in activeGuidedTaskObjects)
+            {
+                if (taskObject == null || !WasTaskObjectUsed(taskObject))
+                {
+                    continue;
+                }
+
+                if ((taskObject.transform.position - player.position).sqrMagnitude <= 1.6f * 1.6f)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private bool AnyTaskObjectUsedOnce()
+    {
+        foreach (GameObject taskObject in activeGuidedTaskObjects)
+        {
+            if (HasRecordedTaskObjectUse(taskObject))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private Vector3 GetTargetCompletionPoint(GameObject target)
+    {
+        Bounds bounds;
+        if (TryGetRendererBounds(target, out bounds))
+        {
+            if (activeGuidedTaskSpec != null && activeGuidedTaskSpec.MarkerPlacement == TaskMarkerPlacement.DoorSurface)
+            {
+                return GetDoorSurfaceMarkerPosition(target, bounds);
+            }
+
+            return bounds.center;
+        }
+
+        return target.transform.position;
+    }
+
+    private bool HasRecordedTaskObjectUse(GameObject taskObject)
+    {
+        InteractionTracker tracker = taskObject != null ? taskObject.GetComponent<InteractionTracker>() : null;
+        if (tracker == null && taskObject != null)
+        {
+            tracker = taskObject.GetComponentInChildren<InteractionTracker>();
+        }
+
+        return tracker != null && (tracker.isUsed || tracker.wasGrabbedByController || tracker.wasCollisionUsed);
+    }
+
+    private bool WasTaskObjectUsed(GameObject taskObject)
+    {
+        InteractionTracker tracker = taskObject.GetComponent<InteractionTracker>();
+        if (tracker == null)
+        {
+            tracker = taskObject.GetComponentInChildren<InteractionTracker>();
+        }
+
+        return tracker == null || tracker.isUsed || tracker.wasGrabbedByController || tracker.wasCollisionUsed;
+    }
+
+    private void CompleteGuidedTask(string completionSource)
+    {
+        guidedTaskCompleted = true;
+        guidedTaskActive = false;
+        ClearGuidedTaskHighlights();
+        Debug.Log("[VRME] Guided task completed. scene=" + SceneManager.GetActiveScene().name + ", source=" + completionSource);
+        TriggerGuidedTaskSurveyIfAvailable();
+    }
+
+    private void ClearGuidedTaskHighlights()
+    {
+        foreach (GameObject taskObject in activeGuidedTaskObjects)
+        {
+            if (taskObject == null)
+            {
+                continue;
+            }
+
+            Outline outline = taskObject.GetComponent<Outline>();
+            if (outline != null)
+            {
+                outline.enabled = false;
+            }
+        }
+
+        foreach (GameObject marker in activeGuidedTaskMarkers)
+        {
+            if (marker != null)
+            {
+                Destroy(marker);
+            }
+        }
+
+        activeGuidedTaskMarkers.Clear();
+        Debug.Log("[VRME] Guided task highlights cleared. scene=" + SceneManager.GetActiveScene().name);
+    }
+
+    private void HideGuidedTaskSurveyIfNeeded(string sceneName)
+    {
+        TeleportationEventListener[] listeners = FindObjectsByType<TeleportationEventListener>(FindObjectsSortMode.None);
+        if (listeners == null || listeners.Length == 0)
+        {
+            Debug.LogWarning("[VRME] No TeleportationEventListener found while hiding guided task survey. scene=" + sceneName);
+            return;
+        }
+
+        foreach (TeleportationEventListener listener in listeners)
+        {
+            if (listener != null)
+            {
+                listener.HideQuestionnaireForGuidedTask();
+            }
+        }
+
+        Debug.Log("[VRME] Guided task survey hidden until completion. scene=" + sceneName + ", listeners=" + listeners.Length);
+    }
+
+    private void TriggerGuidedTaskSurveyIfAvailable()
+    {
+        TeleportationEventListener[] listeners = FindObjectsByType<TeleportationEventListener>(FindObjectsSortMode.None);
+        if (listeners == null || listeners.Length == 0)
+        {
+            Debug.LogWarning("[VRME] No TeleportationEventListener found for guided task survey completion.");
+            return;
+        }
+
+        foreach (TeleportationEventListener listener in listeners)
+        {
+            if (listener == null)
+            {
+                continue;
+            }
+
+            listener.TriggerQuestionnaireFromGuidedTask();
+            Debug.Log("[VRME] Triggered SAM via guided task completion.");
+            return;
+        }
+    }
+
+    private Material CreateTaskHighlightMaterial()
+    {
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null)
+        {
+            shader = Shader.Find("Standard");
+        }
+
+        Material material = new Material(shader);
+        material.name = "VRME_TaskHighlight_Material";
+        material.color = new Color(taskTargetHighlightColor.r, taskTargetHighlightColor.g, taskTargetHighlightColor.b, 0.55f);
+        if (material.HasProperty("_EmissionColor"))
+        {
+            material.EnableKeyword("_EMISSION");
+            material.SetColor("_EmissionColor", taskTargetHighlightColor * 1.6f);
+        }
+
+        return material;
+    }
+
+    private sealed class SceneTaskHighlightSpec
+    {
+        public readonly string[] ObjectNames;
+        public readonly string[] TargetNames;
+        public readonly string TargetLabel;
+        public readonly GuidedTaskCompletionMode CompletionMode;
+        public readonly TaskMarkerPlacement MarkerPlacement;
+        public readonly float MarkerRadius;
+        public readonly float CompletionRadius;
+        public readonly bool UseRuntimeTargetFromPlayer;
+        public readonly float RuntimeTargetForwardDistance;
+
+        public SceneTaskHighlightSpec(
+            string[] objectNames,
+            string[] targetNames,
+            string targetLabel,
+            GuidedTaskCompletionMode completionMode,
+            TaskMarkerPlacement markerPlacement,
+            float markerRadius,
+            float completionRadius,
+            bool useRuntimeTargetFromPlayer = false,
+            float runtimeTargetForwardDistance = 4f)
+        {
+            ObjectNames = objectNames ?? Array.Empty<string>();
+            TargetNames = targetNames ?? Array.Empty<string>();
+            TargetLabel = targetLabel ?? "";
+            CompletionMode = completionMode;
+            MarkerPlacement = markerPlacement;
+            MarkerRadius = markerRadius;
+            CompletionRadius = completionRadius;
+            UseRuntimeTargetFromPlayer = useRuntimeTargetFromPlayer;
+            RuntimeTargetForwardDistance = runtimeTargetForwardDistance;
+        }
+    }
+
+    private enum GuidedTaskCompletionMode
+    {
+        None,
+        ObjectUsedOnce,
+        ObjectNearTarget,
+        PlayerAndObjectNearTarget
+    }
+
+    private enum TaskMarkerPlacement
+    {
+        Ground,
+        ObjectCenter,
+        DoorSurface
+    }
+
+    private async Task<bool> SendTextPromptAsync(string textPrompt, string sourceLabel = "text_prompt")
     {
         if (isSending)
         {
-            return;
+            Debug.LogWarning("[VRME] Text prompt skipped because another send is active. source=" + sourceLabel);
+            return false;
         }
 
         isSending = true;
         try
         {
+            if (isReceivingBackendProactiveIntro)
+            {
+                cancellation?.Cancel();
+                ResetWebSocket();
+                isReceivingBackendProactiveIntro = false;
+            }
+
             await ConnectAsync();
             if (websocket == null || websocket.State != WebSocketState.Open)
             {
                 Debug.LogWarning("[VRME] WebSocket is not open.");
-                return;
+                return false;
             }
 
             await SendConfigAsync();
+            await SendTurnContextAsync();
             byte[] textBytes = System.Text.Encoding.UTF8.GetBytes(textPrompt);
             await websocket.SendAsync(
                 new ArraySegment<byte>(textBytes),
                 WebSocketMessageType.Text,
                 true,
                 cancellation.Token);
-            Debug.Log("[VRME] Sent text prompt: " + textPrompt);
+            Debug.Log("[VRME] Sent text prompt. source=" + sourceLabel + ", chars=" + textPrompt.Length);
 
-            await ReceiveReplyAsync();
+            Task receiveTask = ReceiveReplyAsync();
+            Task timeoutTask = Task.Delay(TimeSpan.FromSeconds(Mathf.Max(5f, textPromptReplyTimeoutSeconds)));
+            Task completedTask = await Task.WhenAny(receiveTask, timeoutTask);
+            if (completedTask != receiveTask)
+            {
+                Debug.LogWarning("[VRME] Text prompt reply timed out. source=" + sourceLabel + ", timeoutSeconds=" + textPromptReplyTimeoutSeconds);
+                ResetWebSocket();
+                return false;
+            }
+
+            await receiveTask;
+            return true;
         }
         catch (Exception ex)
         {
             Debug.LogWarning("[VRME] Text prompt failed: " + ex.Message);
+            ResetWebSocket();
+            return false;
         }
         finally
         {
@@ -495,6 +1391,13 @@ public class VrmeAtticClient : MonoBehaviour
         isSending = true;
         try
         {
+            if (isReceivingBackendProactiveIntro)
+            {
+                cancellation?.Cancel();
+                ResetWebSocket();
+                isReceivingBackendProactiveIntro = false;
+            }
+
             await ConnectAsync();
             if (websocket == null || websocket.State != WebSocketState.Open)
             {
@@ -543,6 +1446,7 @@ public class VrmeAtticClient : MonoBehaviour
 
         using (var writer = new StringWriter())
         {
+            var currentHeldObjects = new List<string>();
             writer.WriteLine("[INTERACTABLE_OBJECT_STATES]");
             writer.WriteLine("scene=" + SceneManager.GetActiveScene().name);
             if (trackers.Length == 0)
@@ -555,10 +1459,16 @@ public class VrmeAtticClient : MonoBehaviour
                 {
                     if (tracker == null || !tracker.isActiveAndEnabled) continue;
 
+                    tracker.RefreshCurrentHeldState();
                     Vector3 objectPosition = tracker.transform.position;
                     if (player != null && Vector3.Distance(playerPosition, objectPosition) > maxContextObjectDistance)
                     {
                         continue;
+                    }
+
+                    if (tracker.isCurrentlyHeld)
+                    {
+                        currentHeldObjects.Add(tracker.ContextName);
                     }
 
                     writer.WriteLine("- " + tracker.ContextName + " | interactionState={" + tracker.InteractionStateSummary + "}");
@@ -566,11 +1476,185 @@ public class VrmeAtticClient : MonoBehaviour
             }
             writer.WriteLine("[/INTERACTABLE_OBJECT_STATES]");
 
+            writer.WriteLine("[CURRENT_HELD_OBJECTS]");
+            if (currentHeldObjects.Count == 0)
+            {
+                writer.WriteLine("none");
+            }
+            else
+            {
+                foreach (string heldObject in currentHeldObjects)
+                {
+                    writer.WriteLine("- " + heldObject);
+                }
+            }
+            writer.WriteLine("authority=Only objects listed above are currently in the participant's hand. Objects with everControllerGrabbed=true but currentHeld=false were handled before but are not currently held.");
+            writer.WriteLine("[/CURRENT_HELD_OBJECTS]");
+
             writer.WriteLine("[INTERACTION_EVENTS]");
             writer.WriteLine(InteractionTracker.GetRecentEventsText(maxRecentInteractionEvents));
             writer.WriteLine("[/INTERACTION_EVENTS]");
+
+            writer.WriteLine(BuildGuidedTaskContext(player, playerPosition));
             return writer.ToString();
         }
+    }
+
+    private string BuildGuidedTaskContext(Transform player, Vector3 playerPosition)
+    {
+        using (var writer = new StringWriter())
+        {
+            writer.WriteLine("[GUIDED_TASK_STATE]");
+            string sceneName = SceneManager.GetActiveScene().name;
+            writer.WriteLine("scene=" + sceneName);
+            writer.WriteLine("status=" + (guidedTaskCompleted ? "completed" : (guidedTaskActive ? "active" : (taskHighlightsActivated ? "highlighted_without_completion_check" : "not_started"))));
+            writer.WriteLine("objective=" + GetSceneTaskObjective(sceneName));
+            writer.WriteLine("instruction_for_avatar=If the participant says they cannot find the object or target, guide them using the highlighted object and target directions below. Suggest only physically grounded actions: grab, carry, move, throw, place, or bring the highlighted object toward the highlighted target. Do not invent object-specific functions such as opening, reading, activating, switching on, transforming, or triggering hidden mechanisms unless an explicit interaction event/state proves that ability. Do not invent unseen objects or exact coordinates in speech; describe relative directions naturally.");
+
+            if (activeGuidedTaskObjects.Count == 0 && activeGuidedTaskTargets.Count == 0)
+            {
+                SceneTaskHighlightSpec plannedSpec = GetSceneTaskHighlightSpec(sceneName);
+                if (plannedSpec == null)
+                {
+                    writer.WriteLine("highlightedObjects=none");
+                    writer.WriteLine("highlightedTargets=none");
+                    writer.WriteLine("[/GUIDED_TASK_STATE]");
+                    return writer.ToString();
+                }
+
+                writer.WriteLine("plannedHighlights=not_visible_until_avatar_briefing_begins");
+                writer.WriteLine("plannedHighlightedObjectHints=" + string.Join(", ", plannedSpec.ObjectNames));
+                writer.WriteLine("plannedHighlightedTargetHints=" + (plannedSpec.TargetNames.Length > 0 ? string.Join(", ", plannedSpec.TargetNames) : plannedSpec.TargetLabel));
+                writer.WriteLine("plannedCompletionMode=" + plannedSpec.CompletionMode);
+                writer.WriteLine("plannedHighlightedObjects:");
+                var plannedObjects = new HashSet<GameObject>();
+                foreach (string objectName in plannedSpec.ObjectNames)
+                {
+                    GameObject plannedObject = FindSceneObjectByNameHint(objectName);
+                    if (plannedObject == null || plannedObjects.Contains(plannedObject))
+                    {
+                        continue;
+                    }
+
+                    plannedObjects.Add(plannedObject);
+                    writer.WriteLine("- " + FormatGuidedTaskLocation(plannedObject.name, GetGuidedObjectPoint(plannedObject), player, playerPosition));
+                }
+
+                writer.WriteLine("plannedHighlightedTargets:");
+                var plannedTargets = new HashSet<GameObject>();
+                foreach (string targetName in plannedSpec.TargetNames)
+                {
+                    GameObject plannedTarget = FindSceneObjectByNameHint(targetName);
+                    if (plannedTarget == null || plannedTargets.Contains(plannedTarget))
+                    {
+                        continue;
+                    }
+
+                    plannedTargets.Add(plannedTarget);
+                    string label = !string.IsNullOrWhiteSpace(plannedSpec.TargetLabel) ? plannedSpec.TargetLabel : plannedTarget.name;
+                    writer.WriteLine("- " + FormatGuidedTaskLocation(label, GetTargetCompletionPoint(plannedTarget), player, playerPosition));
+                }
+
+                if (plannedSpec.UseRuntimeTargetFromPlayer)
+                {
+                    writer.WriteLine("- " + plannedSpec.TargetLabel + " | will be placed on walkable ground ahead of the participant when the briefing begins");
+                }
+
+                writer.WriteLine("[/GUIDED_TASK_STATE]");
+                return writer.ToString();
+            }
+
+            writer.WriteLine("highlightedObjects:");
+            foreach (GameObject taskObject in activeGuidedTaskObjects)
+            {
+                if (taskObject == null)
+                {
+                    continue;
+                }
+
+                writer.WriteLine("- " + FormatGuidedTaskLocation(taskObject.name, GetGuidedObjectPoint(taskObject), player, playerPosition));
+            }
+
+            writer.WriteLine("highlightedTargets:");
+            foreach (GameObject target in activeGuidedTaskTargets)
+            {
+                if (target == null)
+                {
+                    continue;
+                }
+
+                string label = activeGuidedTaskSpec != null && !string.IsNullOrWhiteSpace(activeGuidedTaskSpec.TargetLabel)
+                    ? activeGuidedTaskSpec.TargetLabel
+                    : target.name;
+                writer.WriteLine("- " + FormatGuidedTaskLocation(label, GetTargetCompletionPoint(target), player, playerPosition));
+            }
+
+            writer.WriteLine("[/GUIDED_TASK_STATE]");
+            return writer.ToString();
+        }
+    }
+
+    private Vector3 GetGuidedObjectPoint(GameObject taskObject)
+    {
+        Bounds bounds;
+        if (taskObject != null && TryGetRendererBounds(taskObject, out bounds))
+        {
+            return bounds.center;
+        }
+
+        return taskObject != null ? taskObject.transform.position : Vector3.zero;
+    }
+
+    private string FormatGuidedTaskLocation(string label, Vector3 worldPoint, Transform player, Vector3 playerPosition)
+    {
+        if (player == null)
+        {
+            return label + " | position=" + FormatVector(worldPoint);
+        }
+
+        float distance = Vector3.Distance(playerPosition, worldPoint);
+        return label + " | distance=" + distance.ToString("0.0") + "m | direction=" + GetRelativeDirectionLabel(player, worldPoint);
+    }
+
+    private static string GetRelativeDirectionLabel(Transform player, Vector3 worldPoint)
+    {
+        Vector3 toTarget = worldPoint - player.position;
+        toTarget.y = 0f;
+        if (toTarget.sqrMagnitude < 0.06f)
+        {
+            return "at the participant";
+        }
+
+        Vector3 forward = player.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.01f)
+        {
+            forward = Vector3.forward;
+        }
+        forward.Normalize();
+
+        float angle = Vector3.SignedAngle(forward, toTarget.normalized, Vector3.up);
+        float absAngle = Mathf.Abs(angle);
+        string side = angle >= 0f ? "right" : "left";
+
+        if (absAngle <= 20f)
+        {
+            return "straight ahead";
+        }
+        if (absAngle <= 65f)
+        {
+            return "front-" + side;
+        }
+        if (absAngle <= 115f)
+        {
+            return side;
+        }
+        if (absAngle <= 155f)
+        {
+            return "behind-" + side;
+        }
+
+        return "behind";
     }
 
     private string BuildClosestInteractionObjectSummary(InteractionTracker[] trackers, List<SceneContextObject> discoveredObjects, Vector3 playerPosition, bool hasPlayerPosition)
@@ -1220,6 +2304,12 @@ public class VrmeAtticClient : MonoBehaviour
             return playerTransform;
         }
 
+        GameObject centerEyeAnchor = GameObject.Find("OVRCameraRig/TrackingSpace/CenterEyeAnchor");
+        if (centerEyeAnchor != null && centerEyeAnchor.activeInHierarchy)
+        {
+            return centerEyeAnchor.transform;
+        }
+
         Camera mainCamera = Camera.main;
         if (mainCamera != null)
         {
@@ -1306,13 +2396,29 @@ public class VrmeAtticClient : MonoBehaviour
                     continue;
                 }
 
+                if (text.Contains("\"avatar_reply_start\""))
+                {
+                    string source = ExtractJsonString(text, "source", "");
+                    if (ShouldActivateHighlightsForReplySource(source))
+                    {
+                        mainThreadActions.Enqueue(() => ActivateSceneTaskHighlightsFromReplyStart(source));
+                    }
+                    Debug.Log("[VRME] Avatar reply started. source=" + source);
+                    continue;
+                }
+
                 if (text.Contains("\"audio_stream_start\""))
                 {
                     receivingStream = true;
+                    string source = ExtractJsonString(text, "source", "");
                     int streamSampleRate = ExtractJsonInt(text, "sampleRate", 24000);
                     int streamChannels = ExtractJsonInt(text, "channels", 1);
+                    if (ShouldActivateHighlightsForReplySource(source))
+                    {
+                        mainThreadActions.Enqueue(() => ActivateSceneTaskHighlightsFromReplyStart(source));
+                    }
                     mainThreadActions.Enqueue(() => BeginPcmStream(streamSampleRate, streamChannels));
-                    Debug.Log("[VRME] Audio stream started. sampleRate=" + streamSampleRate + ", channels=" + streamChannels);
+                    Debug.Log("[VRME] Audio stream started. source=" + source + ", sampleRate=" + streamSampleRate + ", channels=" + streamChannels);
                     continue;
                 }
 
@@ -1394,15 +2500,78 @@ public class VrmeAtticClient : MonoBehaviour
         return end > start ? json.Substring(start, end - start) : fallback;
     }
 
+    private bool ShouldActivateHighlightsForReplySource(string source)
+    {
+        return enableTaskHighlights &&
+            !taskHighlightsActivated &&
+            (string.Equals(source, "proactive_guide", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(source, "auto_briefing", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void ActivateSceneTaskHighlightsFromReplyStart(string source)
+    {
+        if (!ShouldActivateHighlightsForReplySource(source))
+        {
+            return;
+        }
+
+        autoIntroSent = true;
+        Debug.Log("[VRME] Activating task highlights at avatar reply start. source=" + source);
+        ActivateSceneTaskHighlights();
+    }
+
     private void ApplyBackendCondition(string backendCondition)
     {
-        string normalized = AvatarDominanceBehaviorController.NormalizeCondition(backendCondition);
+        string normalized = NormalizeAvatarConditionForBackend(backendCondition);
         PlayerData.avatarCondition = normalized;
         AvatarDominanceBehaviorController behavior = GetComponent<AvatarDominanceBehaviorController>();
         if (behavior != null)
         {
             behavior.SetConditionFromBackend(normalized);
         }
+    }
+
+    private static string NormalizeAvatarConditionForBackend(string value)
+    {
+        string normalized = string.IsNullOrWhiteSpace(value) ? "" : value.Trim().ToLowerInvariant();
+        if (normalized == "warm" || normalized == "warm_avatar" || normalized == "warm-companion" ||
+            normalized == "warm_companion" || normalized == "supportive" || normalized == "supportive_companion" ||
+            normalized == "companion" || normalized == "emotional")
+        {
+            return "warm";
+        }
+
+        if (normalized == "cold" || normalized == "cold_avatar" || normalized == "cold-observer" ||
+            normalized == "cold_observer" || normalized == "distant")
+        {
+            return "cold";
+        }
+
+        if (normalized == "dominant" || normalized == "dominance" || normalized == "dom")
+        {
+            return "dom";
+        }
+
+        if (normalized == "submissive" || normalized == "submission" || normalized == "sub")
+        {
+            return "sub";
+        }
+
+        if (normalized == "observer" || normalized == "detached" || normalized == "detached_observer" ||
+            normalized == "baseline")
+        {
+            return "observer";
+        }
+
+        if (normalized == "context_aware" || normalized == "context-aware" ||
+            normalized == "context_aware_guide" || normalized == "context-aware-guide" ||
+            normalized == "context" || normalized == "guide" || normalized == "informational" ||
+            normalized == "appraisal")
+        {
+            return "context_aware";
+        }
+
+        return "backend";
     }
 
     private void BeginPcmStream(int streamSampleRate, int channels)

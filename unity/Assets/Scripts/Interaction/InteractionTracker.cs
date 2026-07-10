@@ -23,23 +23,80 @@ public class InteractionTracker : MonoBehaviour
     public bool trackTriggerCollisions = true;
     public bool wasGrabbedByController { get; private set; } = false;
     public bool wasCollisionUsed { get; private set; } = false;
+    public bool isCurrentlyHeld { get; private set; } = false;
     public string lastUseSource { get; private set; } = "";
     private GrabInteractable grabInteractable;
+    private IPointableElement pointableElement;
+    private readonly HashSet<int> activePointerIds = new HashSet<int>();
 
     public string ContextName => string.IsNullOrWhiteSpace(displayName) ? gameObject.name : displayName;
     public string InteractionStateSummary =>
         "attentionOnly=" + attentionOnlyTarget +
-        ", controllerGrabbed=" + wasGrabbedByController +
-        ", collisionUsed=" + wasCollisionUsed +
-        ", used=" + isUsed +
+        ", everControllerGrabbed=" + wasGrabbedByController +
+        ", everCollisionUsed=" + wasCollisionUsed +
+        ", everUsed=" + isUsed +
+        ", currentHeld=" + isCurrentlyHeld +
         (string.IsNullOrWhiteSpace(lastUseSource) ? "" : ", lastUseSource=" + lastUseSource);
+
+    public void RefreshCurrentHeldState()
+    {
+        if (attentionOnlyTarget)
+        {
+            isCurrentlyHeld = false;
+            activePointerIds.Clear();
+            return;
+        }
+
+        bool actuallySelected = HasSelectingInteractor();
+        if (isCurrentlyHeld && !actuallySelected)
+        {
+            isCurrentlyHeld = false;
+            activePointerIds.Clear();
+            Debug.Log($"[InteractionTracker] Corrected stale held state for {gameObject.name}; no selecting interactor remains.");
+            AddRecentEvent("release:corrected", "refresh");
+        }
+        else if (!isCurrentlyHeld && actuallySelected)
+        {
+            isCurrentlyHeld = true;
+            wasGrabbedByController = true;
+            isUsed = true;
+            lastUseSource = "controller_grab";
+            Debug.Log($"[InteractionTracker] Corrected missed held state for {gameObject.name}; selecting interactor is active.");
+            AddRecentEvent("grab:corrected", "refresh");
+        }
+    }
+
+    private bool HasSelectingInteractor()
+    {
+        if (grabInteractable != null)
+        {
+            foreach (var interactor in grabInteractable.SelectingInteractorViews)
+            {
+                if (interactor != null)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return activePointerIds.Count > 0;
+    }
 
     void Start()
     {
         grabInteractable = GetComponent<GrabInteractable>();
         if (grabInteractable != null)
         {
-            grabInteractable.WhenSelectingInteractorAdded.Action += OnGrabbed;
+            pointableElement = grabInteractable.PointableElement;
+            if (pointableElement != null)
+            {
+                pointableElement.WhenPointerEventRaised += OnPointerEventRaised;
+            }
+            else
+            {
+                grabInteractable.WhenSelectingInteractorAdded.Action += OnGrabbed;
+                grabInteractable.WhenSelectingInteractorRemoved.Action += OnReleased;
+            }
         }
     }
 
@@ -53,10 +110,49 @@ public class InteractionTracker : MonoBehaviour
 
         bool firstUse = !isUsed;
         isUsed = true;
+        isCurrentlyHeld = true;
         wasGrabbedByController = true;
         lastUseSource = "controller_grab";
         Debug.Log($"[InteractionTracker] Object {gameObject.name} grabbed. firstUse={firstUse}");
         AddRecentEvent(firstUse ? "grab:first" : "grab:repeat", interactor != null ? interactor.name : "");
+    }
+
+    private void OnReleased(GrabInteractor interactor)
+    {
+        if (attentionOnlyTarget)
+        {
+            return;
+        }
+
+        isCurrentlyHeld = false;
+        activePointerIds.Clear();
+        Debug.Log($"[InteractionTracker] Object {gameObject.name} released.");
+        AddRecentEvent("release", interactor != null ? interactor.name : "");
+    }
+
+    private void OnPointerEventRaised(PointerEvent evt)
+    {
+        if (attentionOnlyTarget)
+        {
+            return;
+        }
+
+        if (evt.Type == PointerEventType.Select)
+        {
+            activePointerIds.Add(evt.Identifier);
+            bool firstUse = !isUsed;
+            isUsed = true;
+            isCurrentlyHeld = true;
+            wasGrabbedByController = true;
+            lastUseSource = "controller_grab";
+            AddRecentEvent(firstUse ? "grab:first" : "grab:repeat", evt.Identifier.ToString());
+        }
+        else if (evt.Type == PointerEventType.Unselect || evt.Type == PointerEventType.Cancel)
+        {
+            activePointerIds.Remove(evt.Identifier);
+            isCurrentlyHeld = activePointerIds.Count > 0;
+            AddRecentEvent("release", evt.Identifier.ToString());
+        }
     }
 
     private void OnTriggerEnter(Collider other)
@@ -111,7 +207,16 @@ public class InteractionTracker : MonoBehaviour
         // When the object is destroyed, make sure to unsubscribe to prevent memory leaks.
         if (grabInteractable != null)
         {
-            grabInteractable.WhenSelectingInteractorAdded.Action -= OnGrabbed;
+            if (pointableElement == null)
+            {
+                grabInteractable.WhenSelectingInteractorAdded.Action -= OnGrabbed;
+                grabInteractable.WhenSelectingInteractorRemoved.Action -= OnReleased;
+            }
+        }
+
+        if (pointableElement != null)
+        {
+            pointableElement.WhenPointerEventRaised -= OnPointerEventRaised;
         }
     }
 } 
