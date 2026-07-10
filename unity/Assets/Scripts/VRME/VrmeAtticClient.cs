@@ -387,8 +387,28 @@ public class VrmeAtticClient : MonoBehaviour
             return;
         }
 
+        string turnContext = BuildTurnContextString();
+        string json = BuildTurnContextJson("turn_context", turnContext);
+        byte[] payload = System.Text.Encoding.UTF8.GetBytes(json);
+        await websocket.SendAsync(
+            new ArraySegment<byte>(payload),
+            WebSocketMessageType.Text,
+            true,
+            cancellation.Token);
+        LogTurnContextSent(turnContext);
+    }
+
+    private string BuildTurnContextString()
+    {
         using (var writer = new StringWriter())
         {
+            string currentHeldObjects = BuildCurrentHeldObjectsSummary();
+            writer.WriteLine("[UNITY_CONTEXT_SUMMARY]");
+            writer.WriteLine(CameraPoseSender.LatestVoiceAttentionSummary);
+            writer.WriteLine("currentHeldObjects=" + currentHeldObjects);
+            writer.WriteLine("authority=This short summary is generated at voice release and should be treated as the freshest Unity state for gaze attention and held objects.");
+            writer.WriteLine("[/UNITY_CONTEXT_SUMMARY]");
+
             writer.WriteLine("[IMMEDIATE_UNITY_STATE]");
             writer.WriteLine(BuildImmediateUnityStateContext());
             writer.WriteLine("[/IMMEDIATE_UNITY_STATE]");
@@ -406,29 +426,55 @@ public class VrmeAtticClient : MonoBehaviour
                 writer.WriteLine(BuildSceneContext());
             }
 
-            string turnContext = writer.ToString().TrimEnd();
-            string json =
-                "{\"type\":\"turn_context\"" +
-                ",\"participantId\":\"" + EscapeJson(PlayerData.participantId) +
-                "\",\"loginId\":\"" + EscapeJson(PlayerData.loginId) +
-                "\",\"sessionId\":\"" + EscapeJson(PlayerData.sessionId) +
-                "\",\"avatarCondition\":\"" + EscapeJson(PlayerData.avatarCondition) +
-                "\",\"sceneName\":\"" + EscapeJson(SceneManager.GetActiveScene().name) +
-                "\",\"sceneIndex\":" + PlayerData.currentSceneIndex +
-                ",\"sceneContext\":\"" + EscapeJson(turnContext) + "\"}";
-            byte[] payload = System.Text.Encoding.UTF8.GetBytes(json);
-            await websocket.SendAsync(
-                new ArraySegment<byte>(payload),
-                WebSocketMessageType.Text,
-                true,
-                cancellation.Token);
-            if (CameraPoseSender.LatestRuntimeContextText.StartsWith("No CameraPoseSender", StringComparison.OrdinalIgnoreCase))
+            return writer.ToString().TrimEnd();
+        }
+    }
+
+    private string BuildTurnContextJson(string messageType, string turnContext)
+    {
+        return
+            "{\"type\":\"" + EscapeJson(messageType) + "\"" +
+            ",\"participantId\":\"" + EscapeJson(PlayerData.participantId) +
+            "\",\"loginId\":\"" + EscapeJson(PlayerData.loginId) +
+            "\",\"sessionId\":\"" + EscapeJson(PlayerData.sessionId) +
+            "\",\"avatarCondition\":\"" + EscapeJson(PlayerData.avatarCondition) +
+            "\",\"sceneName\":\"" + EscapeJson(SceneManager.GetActiveScene().name) +
+            "\",\"sceneIndex\":" + PlayerData.currentSceneIndex +
+            ",\"sceneContext\":\"" + EscapeJson(turnContext) + "\"}";
+    }
+
+    private void LogTurnContextSent(string turnContext)
+    {
+        if (CameraPoseSender.LatestRuntimeContextText.StartsWith("No CameraPoseSender", StringComparison.OrdinalIgnoreCase))
+        {
+            Debug.LogWarning("[VRME] CameraPoseSender has not produced runtime context yet; sent immediate Unity head state fallback.");
+        }
+
+        Debug.Log("[VRME] Unity context summary: " + CameraPoseSender.LatestVoiceAttentionSummary +
+            ", currentHeldObjects=" + BuildCurrentHeldObjectsSummary());
+        Debug.Log("[VRME] Sent voice-turn context. chars=" + turnContext.Length + " preview=" + PreviewForLog(turnContext, 1800));
+    }
+
+    private string BuildCurrentHeldObjectsSummary()
+    {
+        InteractionTracker[] trackers = FindObjectsByType<InteractionTracker>(FindObjectsSortMode.None);
+        var heldObjects = new List<string>();
+        foreach (InteractionTracker tracker in trackers)
+        {
+            if (tracker == null || !tracker.isActiveAndEnabled || tracker.attentionOnlyTarget)
             {
-                Debug.LogWarning("[VRME] CameraPoseSender has not produced runtime context yet; sent immediate Unity head state fallback.");
+                continue;
             }
 
-            Debug.Log("[VRME] Sent voice-turn context. chars=" + turnContext.Length + " preview=" + PreviewForLog(turnContext, 1800));
+            tracker.RefreshCurrentHeldState();
+            if (tracker.isCurrentlyHeld)
+            {
+                heldObjects.Add(tracker.ContextName);
+            }
         }
+
+        heldObjects.Sort(StringComparer.OrdinalIgnoreCase);
+        return heldObjects.Count == 0 ? "none" : string.Join(", ", heldObjects);
     }
 
     private string BuildImmediateUnityStateContext()
@@ -1406,14 +1452,20 @@ public class VrmeAtticClient : MonoBehaviour
             }
 
             await SendConfigAsync();
-            await SendTurnContextAsync();
 
+            string turnContext = BuildTurnContextString();
+            string wavBase64 = Convert.ToBase64String(wavBytes);
+            string json = BuildTurnContextJson("audio_turn", turnContext).TrimEnd('}') +
+                ",\"audioFormat\":\"wav\"" +
+                ",\"audioBase64\":\"" + wavBase64 + "\"}";
+            byte[] payload = System.Text.Encoding.UTF8.GetBytes(json);
             await websocket.SendAsync(
-                new ArraySegment<byte>(wavBytes),
-                WebSocketMessageType.Binary,
+                new ArraySegment<byte>(payload),
+                WebSocketMessageType.Text,
                 true,
                 cancellation.Token);
-            Debug.Log("[VRME] Sent wav bytes: " + wavBytes.Length);
+            LogTurnContextSent(turnContext);
+            Debug.Log("[VRME] Sent audio_turn wav bytes: " + wavBytes.Length + ", base64Chars=" + wavBase64.Length);
 
             await ReceiveReplyAsync();
         }

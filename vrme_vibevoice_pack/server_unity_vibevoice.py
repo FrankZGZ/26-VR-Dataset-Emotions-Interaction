@@ -857,6 +857,11 @@ async def generate_reply(
         (
             "CONTEXT SEMANTICS: RECENT_RUNTIME_OBSERVATIONS_BEFORE_VOICE describes the latest head/gaze/object attention "
             "right before the participant pressed the voice key. LIVE_USER_OBSERVATIONS describes attention or orientation during the voice turn only. "
+            "UNITY_CONTEXT_SUMMARY, when present, is the freshest compact Unity state at voice release and has priority for currentAttention and currentHeldObjects. "
+            "If UNITY_CONTEXT_SUMMARY says currentHeldObjects=none, do not say the participant is holding or still has any object, even if older history says it was grabbed. "
+            "If currentAttention names Avatar/Social Agent, treat that as valid social attention to the avatar, not as missing gaze and not as attention to a nearby object. "
+            "Within LIVE_USER_OBSERVATIONS, voiceWindowAttention is the latest valid attention target near voice release and is the highest-priority description of what the participant is currently looking at; "
+            "do not replace it with older targets from RECENT_RUNTIME_OBSERVATIONS_BEFORE_VOICE or with secondary objects from attendedDuringSpeech. "
             "INTERACTABLE_OBJECT_STATES describes historical tracked object state and is the authority for whether an interaction "
             "has ever been used; CURRENT_HELD_OBJECTS and currentHeld are the authority for whether the participant is currently holding it. INTERACTION_EVENTS contains actions that actually occurred. Static SCENE_BACKGROUND describes "
             "the scene designer's arrangement and possible affordances, not the current state. GUIDED_TASK_STATE describes "
@@ -995,26 +1000,62 @@ def build_context_grounded_fallback_reply(
 
 
 def sanitize_reply_against_current_held(reply: str, scene_context: str = "") -> str:
+    summary_match = re.search(
+        r"\[UNITY_CONTEXT_SUMMARY\]\s*(.*?)\s*\[/UNITY_CONTEXT_SUMMARY\]",
+        scene_context or "",
+        re.DOTALL | re.IGNORECASE,
+    )
+    summary_held_none = False
+    current_attention = ""
+    if summary_match:
+        summary_block = summary_match.group(1)
+        summary_held_none = re.search(r"^currentHeldObjects\s*=\s*none\s*$", summary_block, re.MULTILINE | re.IGNORECASE) is not None
+        attention_match = re.search(r"^currentAttention\s*=\s*([^,\n]+)", summary_block, re.MULTILINE | re.IGNORECASE)
+        if attention_match:
+            current_attention = attention_match.group(1).strip()
+
+    if not current_attention:
+        attention_match = re.search(r"voiceWindowAttention[^\n]*hitName=([^,\n]+)", scene_context or "", re.IGNORECASE)
+        if attention_match:
+            current_attention = attention_match.group(1).strip()
+
     held_block_match = re.search(
         r"\[CURRENT_HELD_OBJECTS\]\s*(.*?)\s*\[/CURRENT_HELD_OBJECTS\]",
         scene_context or "",
         re.DOTALL | re.IGNORECASE,
     )
-    if not held_block_match:
+    if not held_block_match and not summary_held_none:
         return reply
 
-    held_block = held_block_match.group(1).strip()
+    held_block = held_block_match.group(1).strip() if held_block_match else "none"
     held_lines = [
         line.strip("- ").strip().lower()
         for line in held_block.splitlines()
         if line.strip().startswith("-")
     ]
-    no_current_book = not any("book" in line for line in held_lines)
+    no_current_book = summary_held_none or not any("book" in line for line in held_lines)
     if not no_current_book:
         return reply
 
     lower_reply = reply.lower()
+    current_attention_lower = current_attention.lower()
     mentions_book = "book" in lower_reply
+    attention_is_book = "book" in current_attention_lower
+    attention_is_avatar = "avatar" in current_attention_lower or "social agent" in current_attention_lower
+    attention_is_cup = "cup" in current_attention_lower
+    claims_looking_at_book = mentions_book and any(
+        phrase in lower_reply
+        for phrase in (
+            "looking at the book",
+            "looking toward the book",
+            "focused on the book",
+            "still looking at the book",
+            "still focused on the book",
+            "reading the book",
+            "examining the book",
+            "book in front of you",
+        )
+    )
     claims_current_holding = any(
         phrase in lower_reply
         for phrase in (
@@ -1029,6 +1070,14 @@ def sanitize_reply_against_current_held(reply: str, scene_context: str = "") -> 
             "reading the book",
         )
     )
+    if claims_looking_at_book and current_attention and not attention_is_book:
+        log(f"[SANITY] Rewrote reply that claimed book attention while currentAttention={current_attention!r}.")
+        if attention_is_avatar:
+            return "You're looking at me now. I'm here with you; when you're ready, use the highlighted object or target for the task."
+        if attention_is_cup:
+            return "You're looking at the cup now. You are not currently marked as holding the book, so use the highlighted object or target when you're ready."
+        return f"You're looking at {current_attention} now. You are not currently marked as holding the book."
+
     if mentions_book and claims_current_holding:
         log("[SANITY] Rewrote reply that claimed the participant currently held/used the book without CURRENT_HELD_OBJECTS evidence.")
         return "The book is not currently marked as being in your hand. Use the highlighted object or target for the task."
@@ -1862,6 +1911,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 break
 
             if "text" in message:
+                audio_turn_processed = False
                 try:
                     data = json.loads(message["text"])
                     if data.get("type") == "config":
@@ -1957,10 +2007,49 @@ async def websocket_endpoint(websocket: WebSocket):
                         if isinstance(scene_index, int):
                             client_metadata["sceneIndex"] = scene_index
                         continue
+                    if data.get("type") == "audio_turn":
+                        request_start_at = time.time()
+                        context = data.get("sceneContext")
+                        if isinstance(context, str):
+                            scene_context = context.strip()
+                            preview = scene_context.replace("\n", " | ")[:1200]
+                            client_metadata["sceneContextChars"] = len(scene_context)
+                            log(f"[AUDIO_TURN_CONTEXT] chars={len(scene_context)}, preview={preview}")
+                        for key in ("participantId", "loginId", "sessionId", "avatarCondition", "sceneName"):
+                            value = data.get(key)
+                            if isinstance(value, str) and value.strip():
+                                client_metadata[key] = value.strip()
+                        scene_index = data.get("sceneIndex")
+                        if isinstance(scene_index, int):
+                            client_metadata["sceneIndex"] = scene_index
+                        audio_base64 = data.get("audioBase64")
+                        if not isinstance(audio_base64, str) or not audio_base64.strip():
+                            log("[AUDIO_TURN] Missing audioBase64; skipping turn.")
+                            continue
+                        try:
+                            audio_bytes = base64.b64decode(audio_base64)
+                        except Exception as exc:
+                            log(f"[AUDIO_TURN] Failed to decode audioBase64: {exc}")
+                            continue
+                        log(f"Audio received in audio_turn: {len(audio_bytes)} bytes")
+                        recording_path = save_voice_recording(audio_bytes, client_metadata)
+                        client_metadata["lastRecordingPath"] = str(recording_path)
+                        log(f"[RECORDING] Saved Unity microphone WAV: {recording_path}")
+                        try:
+                            stt_start_at = time.time()
+                            user_text = await transcribe_audio(groq_client, audio_bytes)
+                            stt_seconds = time.time() - stt_start_at
+                        except Exception as exc:
+                            log(f"STT failed: {exc}")
+                            user_text = "(inaudible)"
+                            stt_seconds = time.time() - request_start_at
+                        append_transcription_log(user_text, recording_path, client_metadata, stt_seconds)
+                        audio_turn_processed = True
                 except json.JSONDecodeError:
                     user_text = message["text"].strip()
                 else:
-                    continue
+                    if not audio_turn_processed:
+                        continue
             elif "bytes" in message:
                 request_start_at = time.time()
                 audio_bytes = message["bytes"]

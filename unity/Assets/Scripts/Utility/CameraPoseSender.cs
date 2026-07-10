@@ -10,6 +10,7 @@ public class CameraPoseSender : MonoBehaviour
 {
     public static string LatestRuntimeContextText = "No CameraPoseSender runtime context yet.";
     public static string LatestVoiceRuntimeContextText = "No voice-window context yet.";
+    public static string LatestVoiceAttentionSummary = "currentAttention=unknown";
     public static bool VoiceSamplingActive { get; private set; }
 
     // Serializable class representing each recorded pose
@@ -537,24 +538,33 @@ public class CameraPoseSender : MonoBehaviour
         float duration = Mathf.Max(0f, Time.realtimeSinceStartup - voiceWindowStartedAtRealtime);
 
         CameraPose lastPose = bufferedPoses.Count > 0 ? bufferedPoses[bufferedPoses.Count - 1] : latestCameraPose;
-        GazeSample dominantVoiceGaze = GetDominantVoiceWindowAttention(gazeStart, out int dominantHitCount);
+        GazeSample currentVoiceGaze = GetLatestVoiceWindowAttention(gazeStart, out int currentHitCount);
 
         string poseText = lastPose != null
             ? "latestHead position=" + FormatVector(lastPose.position) +
               ", forward=" + FormatVector(lastPose.orientation * Vector3.forward)
             : "latestHead none";
 
-        string gazeText = dominantVoiceGaze != null
-            ? "voiceWindowAttention source=" + (dominantVoiceGaze.usedHeadForwardFallback ? "head_forward_fallback" : (dominantVoiceGaze.available ? "eye_gaze" : "none")) +
+        string gazeText = currentVoiceGaze != null
+            ? "voiceWindowAttention source=" + (currentVoiceGaze.usedHeadForwardFallback ? "head_forward_fallback" : (currentVoiceGaze.available ? "eye_gaze" : "none")) +
               ", hit=true" +
-              ", hitName=" + dominantVoiceGaze.hitDisplayName +
-              ", selectionSource=" + dominantVoiceGaze.selectionSource +
-              ", attentionOnly=" + dominantVoiceGaze.attentionOnly +
-              ", currentHeld=" + dominantVoiceGaze.currentlyHeld +
-              ", attentionHits=" + dominantHitCount +
-              ", hitDistance=" + dominantVoiceGaze.hitDistance.ToString("0.00") +
-              ", note=attention_during_voice_window_not_holding_state"
-            : "voiceWindowAttention none (no sustained non-avatar object attention during speech)";
+              ", hitName=" + currentVoiceGaze.hitDisplayName +
+              ", selectionSource=" + currentVoiceGaze.selectionSource +
+              ", attentionOnly=" + currentVoiceGaze.attentionOnly +
+              ", currentHeld=" + currentVoiceGaze.currentlyHeld +
+              ", recentHitsForSameTarget=" + currentHitCount +
+              ", hitDistance=" + currentVoiceGaze.hitDistance.ToString("0.00") +
+              ", note=latest_attention_at_voice_release_not_holding_state"
+            : "voiceWindowAttention none (no sustained tracked attention during speech)";
+
+        LatestVoiceAttentionSummary = currentVoiceGaze != null
+            ? "currentAttention=" + (string.IsNullOrWhiteSpace(currentVoiceGaze.hitDisplayName) ? currentVoiceGaze.hitObjectName : currentVoiceGaze.hitDisplayName) +
+              ", source=" + (currentVoiceGaze.usedHeadForwardFallback ? "head_forward_fallback" : (currentVoiceGaze.available ? "eye_gaze" : "head_or_unknown")) +
+              ", attentionOnly=" + currentVoiceGaze.attentionOnly +
+              ", socialInteractionTarget=" + currentVoiceGaze.attentionOnly +
+              ", currentHeld=" + currentVoiceGaze.currentlyHeld +
+              ", hitDistance=" + currentVoiceGaze.hitDistance.ToString("0.00")
+            : "currentAttention=none, reason=no_tracked_gaze_hit_in_current_voice_window";
 
         LatestVoiceRuntimeContextText =
             "voiceWindow duration=" + duration.ToString("0.00") + "s" +
@@ -563,6 +573,11 @@ public class CameraPoseSender : MonoBehaviour
             poseText + "\n" +
             gazeText + "\n" +
             "attendedDuringSpeech=" + BuildVoiceWindowAttendedObjectsContext(gazeStart);
+
+        Debug.Log("[CameraPoseSender] Voice context finalized: " + LatestVoiceAttentionSummary +
+            ", gazeStart=" + gazeStart +
+            ", gazeSamplesInWindow=" + gazeCount +
+            ", poseSamplesInWindow=" + poseCount);
     }
 
     private string BuildVoiceWindowAttendedObjectsContext(int gazeStartIndex)
@@ -679,6 +694,86 @@ public class CameraPoseSender : MonoBehaviour
 
         dominantHitCount = bestCount;
         return latestSamples[bestName];
+    }
+
+    private GazeSample GetLatestVoiceWindowAttention(int gazeStartIndex, out int hitCountForSameTarget)
+    {
+        hitCountForSameTarget = 0;
+        if (bufferedGazeSamples.Count <= gazeStartIndex)
+        {
+            return null;
+        }
+
+        int startIndex = Mathf.Max(0, gazeStartIndex);
+        int recentSampleCount = Mathf.Max(3, Mathf.CeilToInt(0.7f / recordInterval));
+        int recentStartIndex = Mathf.Max(startIndex, bufferedGazeSamples.Count - recentSampleCount);
+
+        GazeSample recentNonAvatarHit = null;
+        string recentNonAvatarName = null;
+        for (int i = bufferedGazeSamples.Count - 1; i >= recentStartIndex; i--)
+        {
+            GazeSample sample = bufferedGazeSamples[i];
+            if (sample == null || !sample.hitInteractionObject || sample.attentionOnly)
+            {
+                continue;
+            }
+
+            string name = string.IsNullOrWhiteSpace(sample.hitDisplayName) ? sample.hitObjectName : sample.hitDisplayName;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            recentNonAvatarHit = sample;
+            recentNonAvatarName = name;
+            break;
+        }
+
+        GazeSample latestHit = recentNonAvatarHit;
+        string latestName = recentNonAvatarName;
+        if (latestHit == null)
+        {
+            for (int i = bufferedGazeSamples.Count - 1; i >= startIndex; i--)
+            {
+                GazeSample sample = bufferedGazeSamples[i];
+                if (sample == null || !sample.hitInteractionObject)
+                {
+                    continue;
+                }
+
+                string name = string.IsNullOrWhiteSpace(sample.hitDisplayName) ? sample.hitObjectName : sample.hitDisplayName;
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+
+                latestHit = sample;
+                latestName = name;
+                break;
+            }
+        }
+
+        if (latestHit == null)
+        {
+            return null;
+        }
+
+        for (int i = startIndex; i < bufferedGazeSamples.Count; i++)
+        {
+            GazeSample sample = bufferedGazeSamples[i];
+            if (sample == null || !sample.hitInteractionObject)
+            {
+                continue;
+            }
+
+            string name = string.IsNullOrWhiteSpace(sample.hitDisplayName) ? sample.hitObjectName : sample.hitDisplayName;
+            if (string.Equals(name, latestName, StringComparison.Ordinal))
+            {
+                hitCountForSameTarget++;
+            }
+        }
+
+        return latestHit;
     }
 
     private bool IsVoiceWindowAttentionQualified(GazeSample targetSample, int gazeStartIndex)
@@ -871,7 +966,7 @@ public class CameraPoseSender : MonoBehaviour
         Vector3 hitPoint = hit.point;
         float hitDistance = hit.distance;
         InteractionTracker nearTracker = FindInteractionTrackerNearRay(gazeRay, out Vector3 nearPoint, out float nearDistance);
-        if (nearTracker != null && ShouldPreferNearInteractionTarget(tracker, nearTracker, gazeRay, nearDistance))
+        if (nearTracker != null && ShouldPreferNearInteractionTarget(tracker, nearTracker, hitDistance, nearDistance))
         {
             tracker = nearTracker;
             hitPoint = nearPoint;
@@ -941,8 +1036,9 @@ public class CameraPoseSender : MonoBehaviour
         {
             targetPoint = hit.point;
         }
+        float hitDistance = tracker != null ? hit.distance : float.PositiveInfinity;
         InteractionTracker nearTracker = FindInteractionTrackerNearRay(gazeRay, out Vector3 nearPoint, out float nearDistance);
-        if (nearTracker != null && ShouldPreferNearInteractionTarget(tracker, nearTracker, gazeRay, nearDistance))
+        if (nearTracker != null && ShouldPreferNearInteractionTarget(tracker, nearTracker, hitDistance, nearDistance))
         {
             tracker = nearTracker;
             targetPoint = nearPoint;
@@ -1111,7 +1207,7 @@ public class CameraPoseSender : MonoBehaviour
         return null;
     }
 
-    private bool ShouldPreferNearInteractionTarget(InteractionTracker raycastTracker, InteractionTracker nearTracker, Ray gazeRay, float nearDistance)
+    private bool ShouldPreferNearInteractionTarget(InteractionTracker raycastTracker, InteractionTracker nearTracker, float raycastDistance, float nearDistance)
     {
         if (nearTracker == null || nearTracker.attentionOnlyTarget)
         {
@@ -1119,6 +1215,24 @@ public class CameraPoseSender : MonoBehaviour
         }
 
         if (raycastTracker == null)
+        {
+            return true;
+        }
+
+        if (raycastTracker == nearTracker)
+        {
+            return false;
+        }
+
+        if (raycastTracker.attentionOnlyTarget)
+        {
+            return false;
+        }
+
+        // If the direct ray hit a larger/background tracked surface behind a
+        // smaller object, use the closer near-ray target. This prevents a cup or
+        // book close to the line of sight from being mislabeled as a door/wall.
+        if (nearDistance + 0.20f < raycastDistance)
         {
             return true;
         }

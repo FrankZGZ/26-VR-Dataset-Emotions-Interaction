@@ -77,6 +77,11 @@ public class InteractionTracker : MonoBehaviour
                     return true;
                 }
             }
+
+            // GrabInteractable's current selecting views are the authority for
+            // held state. Pointer ids can miss a release/cancel event after a
+            // throw, so do not let stale ids keep an object marked as held.
+            return false;
         }
 
         return activePointerIds.Count > 0;
