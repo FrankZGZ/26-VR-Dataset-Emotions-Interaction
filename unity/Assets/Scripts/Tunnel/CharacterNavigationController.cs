@@ -79,8 +79,14 @@ public class CharacterNavigationController : MonoBehaviour
                     animator.SetBool("playIdle", true);
                     animator.SetBool("playWalking", true);
                     // animator.SetFloat("speed", movementSpeed * movementSpeedAnimationFactor);
-                    dogMotion.tiggerDoneWalking();
-                    dogMotion2.tiggerDoneWalking();
+                    if (dogMotion != null)
+                    {
+                        dogMotion.tiggerDoneWalking();
+                    }
+                    if (dogMotion2 != null)
+                    {
+                        dogMotion2.tiggerDoneWalking();
+                    }
                 }
 
                 velocity = (transform.position - lastPosition) / Time.deltaTime;
@@ -109,7 +115,13 @@ public class CharacterNavigationController : MonoBehaviour
         animator.SetBool("playIdle", true);
         animator.SetBool("playWalking", true);
         // animator.SetFloat("speed", movementSpeed * movementSpeedAnimationFactor);
-        dogMotion.tiggerDoneWalking();
-        dogMotion2.tiggerDoneWalking();
+        if (dogMotion != null)
+        {
+            dogMotion.tiggerDoneWalking();
+        }
+        if (dogMotion2 != null)
+        {
+            dogMotion2.tiggerDoneWalking();
+        }
     }
 }

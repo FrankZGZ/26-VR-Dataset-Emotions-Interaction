@@ -16,6 +16,8 @@ public class FeedElephants : MonoBehaviour
     public float slowDuration = 8.0f; // In seconds, total time for the eating sequence and fruit reset
 
     private bool hasFed = false; 
+    public bool HasFedOnce { get; private set; }
+    public bool IsEating => hasFed;
     private Vector3 fruitInitialPosition;
     private Quaternion fruitInitialRotation;
     private Transform fruitInitialParent;
@@ -41,6 +43,12 @@ public class FeedElephants : MonoBehaviour
         if (other.gameObject == fruit)
         {
             hasFed = true; // has fed
+            HasFedOnce = true;
+            InteractionTracker fruitTracker = fruit.GetComponent<InteractionTracker>();
+            if (fruitTracker != null)
+            {
+                fruitTracker.RecordExternalEvent("elephant_feed:received", gameObject.name);
+            }
 
             // move fruit to noseHoldPoint
             fruit.transform.SetParent(noseHoldPoint);

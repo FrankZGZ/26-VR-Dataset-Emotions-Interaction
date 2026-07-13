@@ -162,4 +162,12 @@ public class PaperAirplaneFlight : MonoBehaviour
             }
         }
     }
+
+    public void ResetForRespawn()
+    {
+        isFlying = false;
+        isFallingInWater = false;
+        resetTimer = 0f;
+        EnsureTrailsOff();
+    }
 }

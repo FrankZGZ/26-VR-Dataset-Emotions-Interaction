@@ -202,6 +202,50 @@ public class InteractionTracker : MonoBehaviour
         return string.Join("\n", recentEvents.GetRange(start, recentEvents.Count - start));
     }
 
+    public static string GetRecentEventsTextSince(System.DateTime sinceUtc, int maxEvents)
+    {
+        if (recentEvents.Count == 0 || maxEvents <= 0)
+        {
+            return "none";
+        }
+
+        var matching = new List<string>();
+        foreach (string line in recentEvents)
+        {
+            int separator = line.IndexOf(" | ", System.StringComparison.Ordinal);
+            string timestampText = separator > 0 ? line.Substring(0, separator) : "";
+            if (System.DateTime.TryParse(
+                    timestampText,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind,
+                    out System.DateTime eventUtc) &&
+                eventUtc.ToUniversalTime() >= sinceUtc.ToUniversalTime())
+            {
+                matching.Add(line);
+            }
+        }
+
+        if (matching.Count == 0)
+        {
+            return "none";
+        }
+
+        int start = Mathf.Max(0, matching.Count - maxEvents);
+        return string.Join("\n", matching.GetRange(start, matching.Count - start));
+    }
+
+    public void RecordExternalEvent(string eventType, string sourceName = "")
+    {
+        if (attentionOnlyTarget || string.IsNullOrWhiteSpace(eventType))
+        {
+            return;
+        }
+
+        isUsed = true;
+        lastUseSource = eventType;
+        AddRecentEvent(eventType, sourceName);
+    }
+
     public static void ClearRecentEvents()
     {
         recentEvents.Clear();

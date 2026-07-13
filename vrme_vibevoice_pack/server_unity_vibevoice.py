@@ -362,6 +362,7 @@ LATENCY_EVENTS_JSONL_PATH = Path(os.environ.get(
 ))
 SERVER_RUN_ID = os.environ.get("SERVER_RUN_ID", uuid.uuid4().hex)
 CONVERSATION_MEMORY_TURNS = int(os.environ.get("CONVERSATION_MEMORY_TURNS", "0"))
+LLM_REPLY_TIMEOUT_SECONDS = float(os.environ.get("LLM_REPLY_TIMEOUT_SECONDS", "4.0"))
 conversation_memory: dict[str, list[dict[str, str]]] = {}
 
 CURRENT_MODE = "ai"
@@ -706,7 +707,13 @@ def append_transcription_log(transcript: str, recording_path: Path, metadata: di
     })
 
 
-def append_conversation_log(user_text: str, ai_text: str, mode: str, metadata: dict) -> None:
+def append_conversation_log(
+    user_text: str,
+    ai_text: str,
+    mode: str,
+    metadata: dict,
+    scene_context: str = "",
+) -> None:
     CONVERSATION_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     active_tone = backend_selected_tone(metadata.get("avatarCondition"))
@@ -741,6 +748,7 @@ def append_conversation_log(user_text: str, ai_text: str, mode: str, metadata: d
         "sceneName": scene_name,
         "sceneIndex": metadata.get("sceneIndex", -1),
         "sceneContextChars": metadata.get("sceneContextChars", 0),
+        "sceneContext": scene_context,
         "userText": user_text,
         "replyText": ai_text,
     })
@@ -879,12 +887,16 @@ async def generate_reply(
             "UNITY_CONTEXT_SUMMARY, when present, is the freshest compact Unity state at voice release and has priority for currentAttention and currentHeldObjects. "
             "If UNITY_CONTEXT_SUMMARY says currentHeldObjects=none, do not say the participant is holding or still has any object, even if older history says it was grabbed. "
             "If currentAttention names Avatar/Social Agent, treat that as valid social attention to the avatar, not as missing gaze and not as attention to a nearby object. "
+            "However, CURRENT_HELD_OBJECTS is stronger task-grounding evidence than avatar/social attention. If an object is currently held, respond about that object and the task instead of narrating that the participant is looking at the avatar. "
+            "If attention is none and no object is currently held, recent controller events may support a cautious suggestion but never a claim that an object is still held. "
             "Within LIVE_USER_OBSERVATIONS, voiceWindowAttention is the latest valid attention target near voice release and is the highest-priority description of what the participant is currently looking at; "
             "do not replace it with older targets or with secondary objects from attendedDuringSpeech. "
             "CURRENT_HELD_OBJECTS and currentHeld are the authority for whether the participant is currently holding something. GUIDED_TASK_STATE describes "
             "the currently highlighted guided-task object and target; use it to help the participant find the task when "
             "they are unsure. The guided task constrains what should be suggested; do not add extra object affordances beyond "
-            "the stated objective and tracked evidence. Keep these categories separate."
+            "the stated objective and tracked evidence. dogCaughtBall, dogCurrentlyCarryingBall, dogReturnedBallToPlayer, "
+            "elephantCurrentlyEating, and elephantReceivedBanana are direct scene-script evidence and are authoritative for those animal outcomes. "
+            "Keep these categories separate."
         ),
         (
             "ANTI-OBSERVER RULE: Do not start routine replies with 'I see', 'I notice', 'I observe', 'It looks like', "
@@ -1004,6 +1016,141 @@ def build_context_grounded_fallback_reply(
     return f"I'll keep it simple: in the {scene} scene, {core}."
 
 
+def build_current_turn_grounded_reply(
+    scene_context: str,
+    avatar_condition: str | None = None,
+) -> str:
+    """Deterministic reply for short/timeout turns; never invents state."""
+    context = scene_context or ""
+    attention_match = re.search(r"^currentAttention\s*=\s*([^,\n]+)", context, re.MULTILINE | re.IGNORECASE)
+    attention = attention_match.group(1).strip() if attention_match else ""
+    held_match = re.search(r"^currentHeldObjects\s*=\s*([^\n]+)", context, re.MULTILINE | re.IGNORECASE)
+    held_text = held_match.group(1).strip() if held_match else "none"
+    held = [] if held_text.lower() in ("", "none", "unknown") else [part.strip() for part in held_text.split(",") if part.strip()]
+    status_match = re.search(r"^status\s*=\s*([^\n]+)", context, re.MULTILINE | re.IGNORECASE)
+    status = status_match.group(1).strip().lower() if status_match else ""
+    tone_name = backend_selected_tone(avatar_condition)["name"]
+
+    def context_bool(field_name: str) -> bool:
+        match = re.search(rf"^{re.escape(field_name)}\s*=\s*(true|false)", context, re.MULTILINE | re.IGNORECASE)
+        return bool(match and match.group(1).lower() == "true")
+
+    def spoken_object_name(name: str) -> str:
+        cleaned = re.sub(r"[_\-]?\d+[a-z]*$", "", name.strip(), flags=re.IGNORECASE)
+        return cleaned.replace("_", " ").strip() or name.strip()
+
+    if context_bool("dogCurrentlyCarryingBall"):
+        if tone_name == "warm":
+            return "The dog has the tennis ball and is bringing it back to you."
+        if tone_name == "cold":
+            return "The dog is carrying the tennis ball toward you."
+        return "The dog is carrying the tennis ball back to you."
+    if context_bool("dogReturnedBallToPlayer"):
+        if tone_name == "warm":
+            return "The dog brought the tennis ball back to you. Nice work. The task is complete."
+        if tone_name == "cold":
+            return "The dog returned the tennis ball. The task is complete."
+        return "The dog returned the tennis ball to you. The task is complete."
+    if context_bool("elephantCurrentlyEating"):
+        if tone_name == "warm":
+            return "The elephant has the banana and is eating it now. Nice work."
+        if tone_name == "cold":
+            return "The elephant received the banana and is eating it."
+        return "The elephant is eating the banana."
+    if context_bool("elephantReceivedBanana"):
+        if tone_name == "warm":
+            return "The elephant received the banana. Nice work. The task is complete."
+        if tone_name == "cold":
+            return "The elephant received the banana. The task is complete."
+        return "The elephant received the banana. The task is complete."
+
+    if held:
+        held_name = spoken_object_name(held[0])
+        attention_lower = attention.lower()
+        same_attention = attention and held_name.lower() in spoken_object_name(attention).lower()
+        looking_at_avatar = "avatar" in attention_lower or "social agent" in attention_lower
+        other_attention = attention and attention_lower not in ("none", "unknown") and not same_attention and not looking_at_avatar
+        if tone_name == "warm":
+            if same_attention:
+                state = f"You're holding the {held_name} and looking at it."
+            elif looking_at_avatar:
+                state = f"You're holding the {held_name} and looking at me."
+            elif other_attention:
+                state = f"You're holding the {held_name} and looking at the {spoken_object_name(attention)}."
+            else:
+                state = f"You're holding the {held_name}."
+            if status == "completed":
+                return f"{state} Nice work. The current task is complete."
+            return f"{state} Let's bring it toward the highlighted target; I'll help you stay on track."
+        if tone_name == "cold":
+            if same_attention:
+                state = f"You are holding the {held_name} and looking at it."
+            elif looking_at_avatar:
+                state = f"You are holding the {held_name} and looking at the avatar."
+            elif other_attention:
+                state = f"You are holding the {held_name} and looking at the {spoken_object_name(attention)}."
+            else:
+                state = f"You are holding the {held_name}."
+            if status == "completed":
+                return f"{state} The task is complete."
+            return f"{state} Move it toward the highlighted target."
+        if same_attention:
+            state = f"You're holding the {held_name} and looking at it."
+        elif looking_at_avatar:
+            state = f"You're holding the {held_name} and looking at me."
+        elif other_attention:
+            state = f"You're holding the {held_name} and looking at the {spoken_object_name(attention)}."
+        else:
+            state = f"You're holding the {held_name}."
+        if status == "completed":
+            return f"{state} The current task is marked complete."
+        return f"{state} Move it toward the highlighted target when you're ready."
+
+    attention_lower = attention.lower()
+    if attention and attention_lower not in ("none", "unknown"):
+        if "avatar" in attention_lower or "social agent" in attention_lower:
+            if tone_name == "warm":
+                state = "You're looking at me. I'm here with you."
+            elif tone_name == "cold":
+                state = "You are looking at the avatar."
+            else:
+                state = "You're looking at me."
+            return f"{state} The current task is marked complete." if status == "completed" else state
+        attention_name = spoken_object_name(attention)
+        if tone_name == "warm":
+            state = f"You're looking at the {attention_name}."
+            if status == "completed":
+                return f"{state} Nice work. The current task is complete."
+            return f"{state} You can try interacting with it; I'll help you stay on track."
+        if tone_name == "cold":
+            state = f"Your attention is on the {attention_name}."
+            if status == "completed":
+                return f"{state} The task is complete."
+            return f"{state} Interact with it if it is the highlighted object."
+        state = f"Your current attention is on the {attention_name}."
+        if status == "completed":
+            return f"{state} The current task is marked complete."
+        return f"{state} You can interact with it if it is the highlighted task object."
+
+    if status == "completed":
+        if tone_name == "warm":
+            return "I can't reliably tell what you're looking at or holding right now, but I'm here with you. The current task is complete."
+        if tone_name == "cold":
+            return "No reliable gaze or held-object state is available. The task is complete."
+        return "I don't have reliable gaze or held-object evidence for this turn. The current task is marked complete."
+
+    if tone_name == "warm":
+        return "I can't reliably tell what you're looking at or holding right now. I'm here with you; let's find the highlighted object."
+    if tone_name == "cold":
+        return "No reliable gaze or held-object state is available. Locate the highlighted object."
+    return "I don't have reliable gaze or held-object evidence for this turn. Look toward or grab the highlighted task object."
+
+
+def is_short_grounding_turn(user_text: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]+", " ", (user_text or "").lower()).strip()
+    return normalized in {"", "you", "okay", "ok", "yeah", "yes", "what now", "help"}
+
+
 def sanitize_reply_against_current_held(reply: str, scene_context: str = "") -> str:
     summary_match = re.search(
         r"\[UNITY_CONTEXT_SUMMARY\]\s*(.*?)\s*\[/UNITY_CONTEXT_SUMMARY\]",
@@ -1034,13 +1181,11 @@ def sanitize_reply_against_current_held(reply: str, scene_context: str = "") -> 
 
     held_block = held_block_match.group(1).strip() if held_block_match else "none"
     held_lines = [
-        line.strip("- ").strip().lower()
+        line.strip("- ").strip()
         for line in held_block.splitlines()
         if line.strip().startswith("-")
     ]
-    no_current_book = summary_held_none or not any("book" in line for line in held_lines)
-    if not no_current_book:
-        return reply
+    held_lines_lower = [line.lower() for line in held_lines]
 
     lower_reply = reply.lower()
     current_attention_lower = current_attention.lower()
@@ -1048,6 +1193,30 @@ def sanitize_reply_against_current_held(reply: str, scene_context: str = "") -> 
     attention_is_book = "book" in current_attention_lower
     attention_is_avatar = "avatar" in current_attention_lower or "social agent" in current_attention_lower
     attention_is_cup = "cup" in current_attention_lower
+    claims_avatar_attention = any(
+        phrase in lower_reply
+        for phrase in (
+            "looking at me",
+            "looking toward me",
+            "looking at the avatar",
+            "facing the avatar",
+            "focused on me",
+        )
+    )
+
+    if claims_avatar_attention and current_attention and not attention_is_avatar:
+        log(f"[SANITY] Rewrote false avatar-attention claim; currentAttention={current_attention!r}.")
+        return build_current_turn_grounded_reply(scene_context)
+
+    # Controller state is direct interaction evidence and is more useful than
+    # social gaze for grounding a task response. This also prevents a marginal
+    # avatar ray hit from overriding an object that Unity says is in hand.
+    if held_lines and claims_avatar_attention:
+        held_name = held_lines[0]
+        log(f"[SANITY] Rewrote avatar-attention claim because currentHeldObjects={held_lines!r}.")
+        return f"You're holding {held_name}. Use it with the highlighted target when you're ready."
+
+    no_current_book = summary_held_none or not any("book" in line for line in held_lines_lower)
     claims_looking_at_book = mentions_book and any(
         phrase in lower_reply
         for phrase in (
@@ -1078,12 +1247,12 @@ def sanitize_reply_against_current_held(reply: str, scene_context: str = "") -> 
     if claims_looking_at_book and current_attention and not attention_is_book:
         log(f"[SANITY] Rewrote reply that claimed book attention while currentAttention={current_attention!r}.")
         if attention_is_avatar:
-            return "You're looking at me now. I'm here with you; when you're ready, use the highlighted object or target for the task."
+            return "I don't have reliable object attention for this turn. Use the object you're holding, or look toward the highlighted object and target."
         if attention_is_cup:
             return "You're looking at the cup now. You are not currently marked as holding the book, so use the highlighted object or target when you're ready."
         return f"You're looking at {current_attention} now. You are not currently marked as holding the book."
 
-    if mentions_book and claims_current_holding:
+    if no_current_book and mentions_book and claims_current_holding:
         log("[SANITY] Rewrote reply that claimed the participant currently held/used the book without CURRENT_HELD_OBJECTS evidence.")
         return "The book is not currently marked as being in your hand. Use the highlighted object or target for the task."
 
@@ -2083,15 +2252,32 @@ async def websocket_endpoint(websocket: WebSocket):
             log(f"User: {user_text}")
             try:
                 llm_start_at = time.time()
-                reply = await generate_reply(
-                    groq_client,
-                    openai_client,
-                    user_text,
-                    scene_prompt,
+                if "[SYSTEM_AUTO_TASK_BRIEFING]" not in user_text and is_short_grounding_turn(user_text):
+                    reply = build_current_turn_grounded_reply(
+                        scene_context,
+                        client_metadata.get("avatarCondition"),
+                    )
+                    log(f"[GROUNDING_FAST_PATH] Deterministic current-turn reply used. reply={reply}")
+                else:
+                    reply = await asyncio.wait_for(
+                        generate_reply(
+                            groq_client,
+                            openai_client,
+                            user_text,
+                            scene_prompt,
+                            scene_context,
+                            client_metadata.get("avatarCondition"),
+                            conversation_memory.get(conversation_key(client_metadata), []),
+                        ),
+                        timeout=LLM_REPLY_TIMEOUT_SECONDS,
+                    )
+                llm_seconds = time.time() - llm_start_at
+            except asyncio.TimeoutError:
+                reply = build_current_turn_grounded_reply(
                     scene_context,
                     client_metadata.get("avatarCondition"),
-                    conversation_memory.get(conversation_key(client_metadata), []),
                 )
+                log(f"[LLM_TIMEOUT] Reply exceeded {LLM_REPLY_TIMEOUT_SECONDS:.1f}s; deterministic current-turn reply used. reply={reply}")
                 llm_seconds = time.time() - llm_start_at
             except Exception as exc:
                 log(f"LLM failed: {exc}")
@@ -2105,7 +2291,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 llm_seconds = time.time() - llm_start_at if "llm_start_at" in locals() else 0.0
 
             reply = sanitize_reply_against_current_held(reply, scene_context)
-            append_conversation_log(user_text, reply, CURRENT_MODE, client_metadata)
+            append_conversation_log(user_text, reply, CURRENT_MODE, client_metadata, scene_context)
             remember_conversation_turn(client_metadata, user_text, reply)
             log(f"Reply: {reply}")
             turn_tone = backend_selected_tone(client_metadata.get("avatarCondition"))

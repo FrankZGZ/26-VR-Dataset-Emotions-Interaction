@@ -32,7 +32,7 @@ public class VrmeAtticClient : MonoBehaviour
     public bool autoDiscoverSceneObjectsForContext = false;
     public bool sendLiveContextOnlyForVoiceTurn = true;
     [Tooltip("Comma-separated object name hints used when InteractionTracker components are not present.")]
-    public string sceneObjectNameHints = "HandTorch,Flashlight,Torch,Airplane,Plane,Stone,Rock,Banana,Fruit,Elephant,Dog,Puppy,Ball,Baseball,Book,Cup,Telescope,ManScreaming,Man,Gun,Sign,Door,Handle,Bar,Key,Switch,Button,Lever,Panel,Light,Exit";
+    public string sceneObjectNameHints = "HandTorch,Flashlight,Torch,Shield,Shield01,Airplane,Plane,Stone,Rock,Banana,Fruit,Elephant,Dog,Puppy,Ball,Baseball,Book,Cup,Telescope,ManScreaming,Man,Gun,Sign,Door,Handle,Bar,Key,Switch,Button,Lever,Panel,Light,Exit";
     [Tooltip("Comma-separated object/script name hints used to mark the conversational avatar as a social attention target.")]
     public string avatarObjectNameHints = "Rocketbox,ReadyPlayerMe,DigitalHuman,SocialAgent,CompanionAvatar";
     [Range(1, 40)] public int maxDiscoveredSceneObjects = 20;
@@ -69,6 +69,7 @@ public class VrmeAtticClient : MonoBehaviour
     private StreamingPcmPlayer streamingPlayer;
     private AudioClip recordingClip;
     private bool isRecording;
+    private DateTime voiceTurnStartedAtUtc = DateTime.MinValue;
     private bool isSending;
     private bool isReceivingBackendProactiveIntro;
     private bool recordKeyWasDown;
@@ -534,6 +535,7 @@ public class VrmeAtticClient : MonoBehaviour
 
         recordingClip = Microphone.Start(null, false, maxRecordSeconds, sampleRate);
         isRecording = true;
+        voiceTurnStartedAtUtc = DateTime.UtcNow;
         CameraPoseSender.BeginVoiceSampling();
         Debug.Log("[VRME] Recording started. Release " + GetRecordInputLabel() + " to send." + (isSending ? " Current reply is still finishing; this turn will queue." : ""));
     }
@@ -746,19 +748,19 @@ public class VrmeAtticClient : MonoBehaviour
         {
             case "puppies":
                 return new SceneTaskHighlightSpec(
-                    new[] { "TennisBall", "BallPoint", "Dog", "Puppy" },
-                    Array.Empty<string>(),
+                    new[] { "TennisBall", "BallPoint" },
+                    new[] { "Dog", "Puppy" },
                     "Dog target",
-                    GuidedTaskCompletionMode.ObjectUsedOnce,
+                    GuidedTaskCompletionMode.DogFetchReturned,
                     TaskMarkerPlacement.Ground,
                     0.75f,
                     0.75f);
             case "elephant":
                 return new SceneTaskHighlightSpec(
-                    new[] { "banana", "Banana", "Elephant" },
-                    Array.Empty<string>(),
+                    new[] { "banana", "Banana" },
+                    new[] { "Elephant" },
                     "Elephant target",
-                    GuidedTaskCompletionMode.ObjectUsedOnce,
+                    GuidedTaskCompletionMode.ElephantFed,
                     TaskMarkerPlacement.Ground,
                     0.75f,
                     0.75f);
@@ -1064,7 +1066,7 @@ public class VrmeAtticClient : MonoBehaviour
             return;
         }
 
-        if (activeGuidedTaskTargets.Count == 0 || activeGuidedTaskObjects.Count == 0)
+        if (activeGuidedTaskObjects.Count == 0)
         {
             return;
         }
@@ -1078,18 +1080,66 @@ public class VrmeAtticClient : MonoBehaviour
                 }
                 break;
             case GuidedTaskCompletionMode.ObjectNearTarget:
+                if (activeGuidedTaskTargets.Count == 0)
+                {
+                    break;
+                }
                 if (AnyTaskObjectNearAnyTarget(activeGuidedTaskSpec.CompletionRadius, requirePriorUse: true))
                 {
                     CompleteGuidedTask("object_near_target");
                 }
                 break;
             case GuidedTaskCompletionMode.PlayerAndObjectNearTarget:
+                if (activeGuidedTaskTargets.Count == 0)
+                {
+                    break;
+                }
                 if (IsPlayerAndUsedObjectNearTarget(activeGuidedTaskSpec.CompletionRadius))
                 {
                     CompleteGuidedTask("player_and_object_near_target");
                 }
                 break;
+            case GuidedTaskCompletionMode.DogFetchReturned:
+                if (HasAnyDogReturnedBall())
+                {
+                    CompleteGuidedTask("dog_fetch_returned_to_player");
+                }
+                break;
+            case GuidedTaskCompletionMode.ElephantFed:
+                if (HasAnyElephantBeenFed())
+                {
+                    CompleteGuidedTask("elephant_received_banana");
+                }
+                break;
         }
+    }
+
+    private bool HasAnyDogReturnedBall()
+    {
+        DogMotion2[] dogs = FindObjectsByType<DogMotion2>(FindObjectsSortMode.None);
+        foreach (DogMotion2 dog in dogs)
+        {
+            if (dog != null && dog.isActiveAndEnabled && dog.HasReturnedBallToPlayer)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool HasAnyElephantBeenFed()
+    {
+        FeedElephants[] feeders = FindObjectsByType<FeedElephants>(FindObjectsSortMode.None);
+        foreach (FeedElephants feeder in feeders)
+        {
+            if (feeder != null && feeder.isActiveAndEnabled && feeder.HasFedOnce)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private bool AnyTaskObjectNearAnyTarget(float radius, bool requirePriorUse)
@@ -1351,7 +1401,9 @@ public class VrmeAtticClient : MonoBehaviour
         None,
         ObjectUsedOnce,
         ObjectNearTarget,
-        PlayerAndObjectNearTarget
+        PlayerAndObjectNearTarget,
+        DogFetchReturned,
+        ElephantFed
     }
 
     private enum TaskMarkerPlacement
@@ -1587,6 +1639,11 @@ public class VrmeAtticClient : MonoBehaviour
             writer.WriteLine("authority=Only objects listed above are currently in the participant's hand at this voice trigger.");
             writer.WriteLine("[/CURRENT_HELD_OBJECTS]");
 
+            writer.WriteLine("[RECENT_CONTROLLER_EVENTS]");
+            writer.WriteLine(InteractionTracker.GetRecentEventsTextSince(voiceTurnStartedAtUtc, maxRecentInteractionEvents));
+            writer.WriteLine("authority=These controller events occurred during the current voice-trigger window only. A grab event does not prove the object is still held; CURRENT_HELD_OBJECTS is authoritative for current holding.");
+            writer.WriteLine("[/RECENT_CONTROLLER_EVENTS]");
+
             writer.WriteLine(BuildGuidedTaskContext(player, playerPosition));
             return writer.ToString().TrimEnd();
         }
@@ -1652,6 +1709,7 @@ public class VrmeAtticClient : MonoBehaviour
                     writer.WriteLine("- " + plannedSpec.TargetLabel + " | will be placed on walkable ground ahead of the participant when the briefing begins");
                 }
 
+                AppendAnimalTaskState(writer, sceneName);
                 writer.WriteLine("[/GUIDED_TASK_STATE]");
                 return writer.ToString();
             }
@@ -1681,8 +1739,62 @@ public class VrmeAtticClient : MonoBehaviour
                 writer.WriteLine("- " + FormatGuidedTaskLocation(label, GetTargetCompletionPoint(target), player, playerPosition));
             }
 
+            AppendAnimalTaskState(writer, sceneName);
             writer.WriteLine("[/GUIDED_TASK_STATE]");
             return writer.ToString();
+        }
+    }
+
+    private void AppendAnimalTaskState(StringWriter writer, string sceneName)
+    {
+        if (string.Equals(sceneName, "Puppies", StringComparison.OrdinalIgnoreCase))
+        {
+            bool caught = false;
+            bool carrying = false;
+            bool returned = false;
+            string fetchState = "none";
+            DogMotion2[] dogs = FindObjectsByType<DogMotion2>(FindObjectsSortMode.None);
+            foreach (DogMotion2 dog in dogs)
+            {
+                if (dog == null || !dog.isActiveAndEnabled)
+                {
+                    continue;
+                }
+
+                caught = caught || dog.HasCaughtFetchedBall;
+                carrying = carrying || dog.IsCarryingFetchedBall;
+                returned = returned || dog.HasReturnedBallToPlayer;
+                if (dog.IsCarryingFetchedBall || dog.HasReturnedBallToPlayer || fetchState == "none")
+                {
+                    fetchState = dog.FetchState;
+                }
+            }
+
+            writer.WriteLine("dogFetchState=" + fetchState);
+            writer.WriteLine("dogCaughtBall=" + caught);
+            writer.WriteLine("dogCurrentlyCarryingBall=" + carrying);
+            writer.WriteLine("dogReturnedBallToPlayer=" + returned);
+            writer.WriteLine("animalStateAuthority=These values come directly from DogMotion2 and may be used as evidence for catching, carrying, or returning the tennis ball.");
+        }
+        else if (string.Equals(sceneName, "Elephant", StringComparison.OrdinalIgnoreCase))
+        {
+            bool eating = false;
+            bool fed = false;
+            FeedElephants[] feeders = FindObjectsByType<FeedElephants>(FindObjectsSortMode.None);
+            foreach (FeedElephants feeder in feeders)
+            {
+                if (feeder == null || !feeder.isActiveAndEnabled)
+                {
+                    continue;
+                }
+
+                eating = eating || feeder.IsEating;
+                fed = fed || feeder.HasFedOnce;
+            }
+
+            writer.WriteLine("elephantCurrentlyEating=" + eating);
+            writer.WriteLine("elephantReceivedBanana=" + fed);
+            writer.WriteLine("animalStateAuthority=These values come directly from FeedElephants and may be used as evidence that the elephant received the banana.");
         }
     }
 

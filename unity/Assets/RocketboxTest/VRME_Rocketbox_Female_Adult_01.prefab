@@ -299,7 +299,7 @@ MonoBehaviour:
   autoAttachAvatarAttentionTracker: 1
   autoDiscoverSceneObjectsForContext: 0
   sendLiveContextOnlyForVoiceTurn: 1
-  sceneObjectNameHints: HandTorch,Flashlight,Torch,Airplane,Plane,Stone,Rock,Banana,Fruit,Elephant,Dog,Puppy,Ball,Baseball,Book,Cup,Telescope,ManScreaming,Man,Gun,Sign,Door,Handle,Bar,Key,Switch,Button,Lever,Panel,Light,Exit
+  sceneObjectNameHints: HandTorch,Flashlight,Torch,Shield,Shield01,Airplane,Plane,Stone,Rock,Banana,Fruit,Elephant,Dog,Puppy,Ball,Baseball,Book,Cup,Telescope,ManScreaming,Man,Gun,Sign,Door,Handle,Bar,Key,Switch,Button,Lever,Panel,Light,Exit
   avatarObjectNameHints: Rocketbox,ReadyPlayerMe,DigitalHuman,SocialAgent,CompanionAvatar
   maxDiscoveredSceneObjects: 20
   maxContextObjectDistance: 25

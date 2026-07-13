@@ -758,6 +758,14 @@ public class CameraPoseSender : MonoBehaviour
             return null;
         }
 
+        // Never promote a single incidental hit (especially the avatar's large
+        // social-attention collider) into the authoritative turn grounding.
+        // A target must be observed for the configured minimum dwell time.
+        if (!IsVoiceWindowAttentionQualified(latestHit, startIndex))
+        {
+            return null;
+        }
+
         for (int i = startIndex; i < bufferedGazeSamples.Count; i++)
         {
             GazeSample sample = bufferedGazeSamples[i];
@@ -795,7 +803,7 @@ public class CameraPoseSender : MonoBehaviour
         for (int i = Mathf.Max(0, gazeStartIndex); i < bufferedGazeSamples.Count; i++)
         {
             GazeSample sample = bufferedGazeSamples[i];
-            if (sample == null || !sample.hitInteractionObject || sample.attentionOnly)
+            if (sample == null || !sample.hitInteractionObject)
             {
                 continue;
             }
