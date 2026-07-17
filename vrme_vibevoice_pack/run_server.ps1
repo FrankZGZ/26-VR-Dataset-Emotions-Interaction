@@ -36,7 +36,8 @@ New-Item -ItemType Directory -Force -Path $env:HF_HOME, $env:TRANSFORMERS_CACHE,
 
 $python = Join-Path (Split-Path $PSScriptRoot -Parent) ".venv\Scripts\python.exe"
 if (-not (Test-Path $python)) {
-    $python = "python"
+    $sharedBackendPython = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) "avartar-server\.venv\Scripts\python.exe"
+    $python = if (Test-Path $sharedBackendPython) { $sharedBackendPython } else { "python" }
 }
 
 & $python -m pip install -r requirements.txt

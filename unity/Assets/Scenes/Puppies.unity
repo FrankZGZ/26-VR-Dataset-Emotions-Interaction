@@ -12224,6 +12224,10 @@ MonoBehaviour:
   destroyAfterTeleport: []
   refreshAfterTeleport: []
   hideQuestionnaireOnStart: 1
+  enableKeyboardExitTrigger: 1
+  keyboardExitTriggerKey: 101
+  repositionRigForSurvey: 1
+  applyLegacySceneResetAfterSurvey: 1
 --- !u!65 &501720120
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -28535,6 +28539,7 @@ GameObject:
   - component: {fileID: 1251709947}
   - component: {fileID: 1251709946}
   - component: {fileID: 1251709945}
+  - component: {fileID: 1251709950}
   m_Layer: 0
   m_Name: Camera Rig
   m_TagString: Untagged
@@ -28700,6 +28705,27 @@ Transform:
   - {fileID: 869574307}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1251709950
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1251709944}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 94f593d0c86d4afe859a41055a9c8a2e, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  centerEyeAnchor: {fileID: 1914283605}
+  targetEyeHeight: 1.62
+  calibrationDelay: 1.5
+  sampleFrames: 30
+  correctionThreshold: 0.12
+  maximumDownwardCorrection: 0.55
+  maximumUpwardCorrection: 0.55
+  groundRayHeight: 2.5
+  groundRayDistance: 5
 --- !u!1 &1254573037
 GameObject:
   m_ObjectHideFlags: 0
@@ -42074,7 +42100,20 @@ MonoBehaviour:
   radius: 0.033
   bounciness: 0.5
   friction: 0.5
+  autoAddGrabComponents: 1
+  keepAboveGround: 1
+  groundSearchHeight: 2
+  groundSearchDistance: 4
+  groundClearance: 0.002
+  minimumGroundPenetrationForRecovery: 0.02
+  groundRecoveryCheckInterval: 0.25
+  maximumSnapUpDistance: 0.6
+  constrainToPlayArea: 1
+  maximumHorizontalDistanceFromSpawn: 6
+  maximumHeightAboveSpawn: 3
+  maximumDepthBelowSpawn: 1
   hasBeenThrown: 0
+  fetchThrowSpeedThreshold: 0.8
   stillThreshold: 2
 --- !u!114 &1878330435
 MonoBehaviour:

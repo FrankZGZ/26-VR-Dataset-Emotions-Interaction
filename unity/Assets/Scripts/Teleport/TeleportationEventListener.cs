@@ -103,12 +103,41 @@ public class TeleportationEventListener : MonoBehaviour
 
         if (Time.unscaledTime < colliderTriggerArmedAt ||
             questionnaireTriggered ||
-            !IsPlayerCollider(other))
+            IsBroadTunnelDoorTrigger() ||
+            !IsPlayerCollider(other) ||
+            !IsExitAvailable())
         {
             return;
         }
 
         TriggerQuestionnaire("collider " + other.name);
+    }
+
+    private bool IsBroadTunnelDoorTrigger()
+    {
+        return string.Equals(SceneManager.GetActiveScene().name, "Tunnel", System.StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(gameObject.name, "ExitDoor", System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsExitAvailable()
+    {
+        SceneController controller = sceneController != null
+            ? sceneController.GetComponent<SceneController>()
+            : FindObjectOfType<SceneController>();
+
+        if (controller == null)
+        {
+            Debug.LogWarning("[Survey] SceneController not found; accepting the physical Exit trigger.");
+            return true;
+        }
+
+        if (!controller.SceneConditionsMet)
+        {
+            Debug.Log("[Survey] Ignored Exit overlap because the one-minute/task gate has not opened yet.");
+            return false;
+        }
+
+        return true;
     }
 
     private void TriggerQuestionnaire(string source)
@@ -132,6 +161,7 @@ public class TeleportationEventListener : MonoBehaviour
             Debug.LogWarning("CameraPoseSender not found in the scene!");
         }
 
+        HideConversationalAvatarsForSurvey();
         HandleTeleportPadInteraction();
         if (repositionRigForSurvey)
         {
@@ -147,6 +177,24 @@ public class TeleportationEventListener : MonoBehaviour
     public void HideQuestionnaireForGuidedTask()
     {
         HideQuestionnaireOnSceneEntry();
+    }
+
+    private static void HideConversationalAvatarsForSurvey()
+    {
+        VrmeAtticClient[] avatarClients = FindObjectsByType<VrmeAtticClient>(FindObjectsSortMode.None);
+        int hiddenCount = 0;
+        foreach (VrmeAtticClient avatarClient in avatarClients)
+        {
+            if (avatarClient == null || !avatarClient.gameObject.activeSelf)
+            {
+                continue;
+            }
+
+            avatarClient.gameObject.SetActive(false);
+            hiddenCount++;
+        }
+
+        Debug.Log("[Survey] Hidden conversational avatars for questionnaire visibility. count=" + hiddenCount);
     }
 
     private void HideQuestionnaireOnSceneEntry()
@@ -384,6 +432,7 @@ public class TeleportationEventListener : MonoBehaviour
         if (samTask != null)
         {
             samTask.SetActive(true);
+            PositionQuestionnaireInFrontOfView();
             Debug.Log("SAMTask GameObject activated");
         }
         else
@@ -441,6 +490,88 @@ public class TeleportationEventListener : MonoBehaviour
         }
     }
 
+    private void PositionQuestionnaireInFrontOfView()
+    {
+        if (samTask == null)
+        {
+            return;
+        }
+
+        // Scenes that provide an authored survey viewing point use the original
+        // project flow: keep the questionnaire at its authored transform and
+        // move the XR rig to teleportTargetPosition instead.
+        if (repositionRigForSurvey)
+        {
+            Debug.Log("[Survey] Using authored questionnaire placement for " +
+                SceneManager.GetActiveScene().name + "; the XR rig will move to the configured survey viewpoint.");
+            return;
+        }
+
+        Transform view = ovrCameraRig != null && ovrCameraRig.centerEyeAnchor != null
+            ? ovrCameraRig.centerEyeAnchor
+            : (Camera.main != null ? Camera.main.transform : null);
+        Canvas surveyCanvas = FindVisibleQuestionnaireCanvas();
+        if (view == null || surveyCanvas == null)
+        {
+            Debug.LogWarning("[Survey] Could not place SAM in front of the headset; view or canvas was missing.");
+            return;
+        }
+
+        Vector3 forward = view.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.01f)
+        {
+            forward = Vector3.forward;
+        }
+        else
+        {
+            forward.Normalize();
+        }
+
+        RectTransform panel = surveyCanvas.transform as RectTransform;
+        panel.position = view.position + forward * 1.35f;
+        // Match the headset's horizontal viewing direction so the authored
+        // world-space Canvas presents its front face to the participant.
+        panel.rotation = Quaternion.LookRotation(forward, Vector3.up);
+        Debug.Log("[Survey] Positioned " + SceneManager.GetActiveScene().name +
+            " SAM canvas " + surveyCanvas.name + " in front of headset at " + panel.position + ".");
+    }
+
+    private Canvas FindVisibleQuestionnaireCanvas()
+    {
+        if (samTask == null)
+        {
+            return null;
+        }
+
+        Canvas[] canvases = samTask.GetComponentsInChildren<Canvas>(true);
+        Canvas firstActiveCanvas = null;
+        foreach (Canvas canvas in canvases)
+        {
+            if (canvas == null || !canvas.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            if (firstActiveCanvas == null)
+            {
+                firstActiveCanvas = canvas;
+            }
+
+            if (canvas.name.IndexOf("SAM", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return canvas;
+            }
+        }
+
+        // Prefer an active page. In the prison scene SurveySlider is the first
+        // serialized Canvas but is intentionally inactive while SurveySAM is
+        // the page that must be shown.
+        return firstActiveCanvas != null
+            ? firstActiveCanvas
+            : (canvases.Length > 0 ? canvases[0] : null);
+    }
+
     private static void EnableQuestionnaireRay(GameObject taskRay, string side)
     {
         if (taskRay == null)
@@ -461,7 +592,7 @@ public class TeleportationEventListener : MonoBehaviour
 
         taskRay.SetActive(true);
 
-        foreach (Behaviour behaviour in taskRay.GetComponents<Behaviour>())
+        foreach (Behaviour behaviour in taskRay.GetComponentsInChildren<Behaviour>(true))
         {
             if (behaviour != null)
             {
@@ -469,7 +600,7 @@ public class TeleportationEventListener : MonoBehaviour
             }
         }
 
-        foreach (Renderer renderer in taskRay.GetComponents<Renderer>())
+        foreach (Renderer renderer in taskRay.GetComponentsInChildren<Renderer>(true))
         {
             if (renderer != null)
             {

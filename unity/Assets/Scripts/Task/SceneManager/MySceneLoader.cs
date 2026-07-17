@@ -35,6 +35,9 @@ public class MySceneLoader : MonoBehaviour
     
     private int currentSequentialIndex = 0; 
     private static int persistentSequentialIndex = 0; // Persist across scenes
+    private static bool flowSessionInitialized = false;
+    private static bool directSceneResumeMode = false;
+    private static List<int> directRecoverySequence = null;
     private List<int> sequentialScenes; 
     private bool isLoadingRealScene = false;
     
@@ -46,6 +49,16 @@ public class MySceneLoader : MonoBehaviour
     private const string latinSquareFileName = "LatinSquare.json";
     private static List<List<int>> allSequences = null;
     private static bool hasLoggedLatinSquare = false;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetPlaySessionFlow()
+    {
+        persistentSequentialIndex = 0;
+        flowSessionInitialized = false;
+        directSceneResumeMode = false;
+        directRecoverySequence = null;
+        hasLoggedLatinSquare = false;
+    }
 
     void Start()
     {
@@ -117,6 +130,37 @@ public class MySceneLoader : MonoBehaviour
             }
         }
 
+        int currentSceneBuildIndex = SceneManager.GetActiveScene().buildIndex;
+        string currentSceneName = SceneManager.GetActiveScene().name;
+        List<int> canonicalExperimentScenes = GetCanonicalExperimentScenes();
+
+        // A run started from Tutorial/Real is a normal participant run and keeps
+        // the Latin-square order. Starting Play inside an experiment scene is a
+        // recovery/test run, so continue by build order from that scene onward.
+        if (currentSceneName == "Tutorial_Interaction")
+        {
+            flowSessionInitialized = true;
+            directSceneResumeMode = false;
+            persistentSequentialIndex = 0;
+        }
+        else if (currentSceneBuildIndex == realSceneBuildIndex)
+        {
+            if (!flowSessionInitialized)
+            {
+                flowSessionInitialized = true;
+                directSceneResumeMode = false;
+                persistentSequentialIndex = 0;
+            }
+        }
+        else if (canonicalExperimentScenes.Contains(currentSceneBuildIndex) && !flowSessionInitialized)
+        {
+            flowSessionInitialized = true;
+            directSceneResumeMode = true;
+            persistentSequentialIndex = 0;
+            directRecoverySequence = RotateSequenceToStartAt(canonicalExperimentScenes, currentSceneBuildIndex);
+            Debug.Log($"[SceneFlow] Direct scene recovery mode started from {currentSceneName}; six-scene cycle={string.Join(",", directRecoverySequence)}.");
+        }
+
         int pid = int.Parse(PlayerData.participantId);
         if (pid < allSequences.Count)
         {
@@ -128,7 +172,9 @@ public class MySceneLoader : MonoBehaviour
                 LogLatinSquareToJsonFile(pid, pid, rowList);
                 hasLoggedLatinSquare = true;
             }
-            sequentialScenes = new List<int>(rowList);
+            sequentialScenes = directSceneResumeMode
+                ? new List<int>(directRecoverySequence ?? canonicalExperimentScenes)
+                : new List<int>(rowList);
         }
         else
         {
@@ -136,8 +182,6 @@ public class MySceneLoader : MonoBehaviour
         }
         
         // Check if current scene is the real scene
-        int currentSceneBuildIndex = SceneManager.GetActiveScene().buildIndex;
-        
         if (currentSceneBuildIndex == realSceneBuildIndex)
         {
             // If current is real scene, use persistent index
@@ -148,18 +192,31 @@ public class MySceneLoader : MonoBehaviour
         }
         else
         {
-            // If current is not real scene, find its position in the sequence
+            // Starting Play directly from any experiment scene is treated as a
+            // resume point. Its Exit continues through Real to the following
+            // scene instead of restarting the sequence from the beginning.
             isLoadingRealScene = false;
-            
-            // Find current scene's position in the Latin square sequence
+            bool currentSceneFoundInSequence = false;
             for (int i = 0; i < sequentialScenes.Count; i++)
             {
                 if (sequentialScenes[i] == currentSceneBuildIndex)
                 {
                     currentSequentialIndex = i + 1; // Set to next scene index
                     persistentSequentialIndex = currentSequentialIndex; // Save to static variable
+                    PlayerData.currentSceneIndex = i;
+                    currentSceneFoundInSequence = true;
+                    string mode = directSceneResumeMode ? "direct recovery" : "participant Latin-square";
+                    Debug.Log($"[SceneFlow] Resuming from {SceneManager.GetActiveScene().name} in {mode} mode at sequence position {i + 1}/{sequentialScenes.Count}; next sequence index={currentSequentialIndex}.");
                     break;
                 }
+            }
+
+            if (!currentSceneFoundInSequence &&
+                currentSceneBuildIndex != endSceneBuildIndex &&
+                SceneManager.GetActiveScene().name != "Tutorial_Interaction")
+            {
+                Debug.LogWarning($"[SceneFlow] Active scene {SceneManager.GetActiveScene().name} (build index {currentSceneBuildIndex}) is not present in the participant sequence; keeping next sequence index={persistentSequentialIndex}.");
+                currentSequentialIndex = persistentSequentialIndex;
             }
         }
     }
@@ -229,6 +286,43 @@ public class MySceneLoader : MonoBehaviour
     public void LoadBySceneNum(int sceneNumber)
     {
         StartCoroutine(LoadAsyncScene(sceneNumber));
+    }
+
+    private List<int> GetCanonicalExperimentScenes()
+    {
+        var result = new List<int>();
+        for (int buildIndex = 0; buildIndex < SceneManager.sceneCountInBuildSettings; buildIndex++)
+        {
+            string scenePath = SceneUtility.GetScenePathByBuildIndex(buildIndex);
+            string sceneName = Path.GetFileNameWithoutExtension(scenePath);
+            if (sceneName == "Tutorial_Interaction" ||
+                buildIndex == realSceneBuildIndex ||
+                buildIndex == endSceneBuildIndex)
+            {
+                continue;
+            }
+
+            result.Add(buildIndex);
+        }
+
+        return result;
+    }
+
+    private List<int> RotateSequenceToStartAt(List<int> source, int firstSceneBuildIndex)
+    {
+        var rotated = new List<int>(source.Count);
+        int startIndex = source.IndexOf(firstSceneBuildIndex);
+        if (startIndex < 0)
+        {
+            return new List<int>(source);
+        }
+
+        for (int offset = 0; offset < source.Count; offset++)
+        {
+            rotated.Add(source[(startIndex + offset) % source.Count]);
+        }
+
+        return rotated;
     }
 
     private IEnumerator LoadAsyncScene(int sceneNumber)

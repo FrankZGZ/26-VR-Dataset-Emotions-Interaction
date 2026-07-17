@@ -10,6 +10,7 @@ public class SceneController : MonoBehaviour
 
     // Variables.
     public float countdownTimerSeconds = -1;
+    private const float MinimumExitDelaySeconds = 60f;
     // public GameObject surveyCanvas;
     public GameObject doorObject;
     // If it is tutorial scene.
@@ -38,6 +39,15 @@ public class SceneController : MonoBehaviour
             if(this.countdownTimerSeconds < 0)
             {
                 this.countdownTimerSeconds = StudySettings.sceneTime;
+            }
+
+            // Scene/global overrides must never open an experiment exit before
+            // one full minute. Keep the tutorial and survey's own short timers.
+            string activeSceneName = SceneManager.GetActiveScene().name;
+            bool isExperimentScene = activeSceneName != "Tutorial" && activeSceneName != "EmotionSurvey";
+            if (isExperimentScene)
+            {
+                this.countdownTimerSeconds = Mathf.Max(this.countdownTimerSeconds, MinimumExitDelaySeconds);
             }
 
             // Get door animator.

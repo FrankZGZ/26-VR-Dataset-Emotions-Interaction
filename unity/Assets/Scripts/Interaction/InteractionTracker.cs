@@ -1,5 +1,6 @@
 using UnityEngine;
 using Oculus.Interaction;
+using Oculus.Interaction.HandGrab;
 using System.Collections.Generic;
 
 /// <summary>
@@ -26,6 +27,7 @@ public class InteractionTracker : MonoBehaviour
     public bool isCurrentlyHeld { get; private set; } = false;
     public string lastUseSource { get; private set; } = "";
     private GrabInteractable grabInteractable;
+    private HandGrabInteractable handGrabInteractable;
     private IPointableElement pointableElement;
     private readonly HashSet<int> activePointerIds = new HashSet<int>();
 
@@ -78,9 +80,24 @@ public class InteractionTracker : MonoBehaviour
                 }
             }
 
-            // GrabInteractable's current selecting views are the authority for
-            // held state. Pointer ids can miss a release/cancel event after a
-            // throw, so do not let stale ids keep an object marked as held.
+        }
+
+        if (handGrabInteractable != null)
+        {
+            foreach (var interactor in handGrabInteractable.SelectingInteractorViews)
+            {
+                if (interactor != null)
+                {
+                    return true;
+                }
+            }
+        }
+
+        // Both controller GrabInteractable and HandGrabInteractable selection
+        // views are authoritative. Pointer ids are only a fallback when an
+        // object has neither component.
+        if (grabInteractable != null || handGrabInteractable != null)
+        {
             return false;
         }
 
@@ -90,18 +107,18 @@ public class InteractionTracker : MonoBehaviour
     void Start()
     {
         grabInteractable = GetComponent<GrabInteractable>();
-        if (grabInteractable != null)
+        handGrabInteractable = GetComponent<HandGrabInteractable>();
+        pointableElement = grabInteractable != null
+            ? grabInteractable.PointableElement
+            : (handGrabInteractable != null ? handGrabInteractable.PointableElement : null);
+        if (pointableElement != null)
         {
-            pointableElement = grabInteractable.PointableElement;
-            if (pointableElement != null)
-            {
-                pointableElement.WhenPointerEventRaised += OnPointerEventRaised;
-            }
-            else
-            {
-                grabInteractable.WhenSelectingInteractorAdded.Action += OnGrabbed;
-                grabInteractable.WhenSelectingInteractorRemoved.Action += OnReleased;
-            }
+            pointableElement.WhenPointerEventRaised += OnPointerEventRaised;
+        }
+        else if (grabInteractable != null)
+        {
+            grabInteractable.WhenSelectingInteractorAdded.Action += OnGrabbed;
+            grabInteractable.WhenSelectingInteractorRemoved.Action += OnReleased;
         }
     }
 

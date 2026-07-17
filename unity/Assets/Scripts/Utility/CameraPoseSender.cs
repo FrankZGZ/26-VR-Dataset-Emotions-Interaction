@@ -539,6 +539,12 @@ public class CameraPoseSender : MonoBehaviour
 
         CameraPose lastPose = bufferedPoses.Count > 0 ? bufferedPoses[bufferedPoses.Count - 1] : latestCameraPose;
         GazeSample currentVoiceGaze = GetLatestVoiceWindowAttention(gazeStart, out int currentHitCount);
+        float currentAttentionShare = gazeCount > 0 ? (float)currentHitCount / gazeCount : 0f;
+        bool currentAttentionLikely = currentVoiceGaze != null &&
+            currentHitCount >= 5 &&
+            currentHitCount * recordInterval >= 0.5f &&
+            currentAttentionShare >= 0.45f;
+        string currentAttentionConfidence = currentAttentionLikely ? "likely" : "possible";
 
         string poseText = lastPose != null
             ? "latestHead position=" + FormatVector(lastPose.position) +
@@ -553,6 +559,9 @@ public class CameraPoseSender : MonoBehaviour
               ", attentionOnly=" + currentVoiceGaze.attentionOnly +
               ", currentHeld=" + currentVoiceGaze.currentlyHeld +
               ", recentHitsForSameTarget=" + currentHitCount +
+              ", voiceWindowSamples=" + gazeCount +
+              ", attentionShare=" + currentAttentionShare.ToString("0.00") +
+              ", attentionConfidence=" + currentAttentionConfidence +
               ", hitDistance=" + currentVoiceGaze.hitDistance.ToString("0.00") +
               ", note=latest_attention_at_voice_release_not_holding_state"
             : "voiceWindowAttention none (no sustained tracked attention during speech)";
@@ -563,6 +572,10 @@ public class CameraPoseSender : MonoBehaviour
               ", attentionOnly=" + currentVoiceGaze.attentionOnly +
               ", socialInteractionTarget=" + currentVoiceGaze.attentionOnly +
               ", currentHeld=" + currentVoiceGaze.currentlyHeld +
+              ", attentionHits=" + currentHitCount +
+              ", voiceWindowSamples=" + gazeCount +
+              ", attentionShare=" + currentAttentionShare.ToString("0.00") +
+              ", attentionConfidence=" + currentAttentionConfidence +
               ", hitDistance=" + currentVoiceGaze.hitDistance.ToString("0.00")
             : "currentAttention=none, reason=no_tracked_gaze_hit_in_current_voice_window";
 
@@ -705,6 +718,19 @@ public class CameraPoseSender : MonoBehaviour
         }
 
         int startIndex = Mathf.Max(0, gazeStartIndex);
+
+        // A small nearby task object occupies far fewer pixels than a wall or
+        // floor behind it. If real eye gaze sustained a close physical target,
+        // keep that target instead of letting the final background sample win.
+        GazeSample closeInteractionTarget = GetCloseVoiceWindowInteractionTarget(
+            startIndex,
+            out int closeTargetHitCount);
+        if (closeInteractionTarget != null)
+        {
+            hitCountForSameTarget = closeTargetHitCount;
+            return closeInteractionTarget;
+        }
+
         int recentSampleCount = Mathf.Max(3, Mathf.CeilToInt(0.7f / recordInterval));
         int recentStartIndex = Mathf.Max(startIndex, bufferedGazeSamples.Count - recentSampleCount);
 
@@ -782,6 +808,76 @@ public class CameraPoseSender : MonoBehaviour
         }
 
         return latestHit;
+    }
+
+    private GazeSample GetCloseVoiceWindowInteractionTarget(int gazeStartIndex, out int bestHitCount)
+    {
+        bestHitCount = 0;
+        var hitCounts = new Dictionary<string, int>();
+        var latestSamples = new Dictionary<string, GazeSample>();
+        var minimumDistances = new Dictionary<string, float>();
+
+        for (int i = Mathf.Max(0, gazeStartIndex); i < bufferedGazeSamples.Count; i++)
+        {
+            GazeSample sample = bufferedGazeSamples[i];
+            if (sample == null || !sample.hitInteractionObject ||
+                sample.attentionOnly || sample.hitDistance > 1.25f)
+            {
+                continue;
+            }
+
+            string name = string.IsNullOrWhiteSpace(sample.hitDisplayName)
+                ? sample.hitObjectName
+                : sample.hitDisplayName;
+            if (string.IsNullOrWhiteSpace(name) || IsBackgroundSurfaceName(name))
+            {
+                continue;
+            }
+
+            if (!hitCounts.ContainsKey(name))
+            {
+                hitCounts[name] = 0;
+                minimumDistances[name] = sample.hitDistance;
+            }
+
+            hitCounts[name]++;
+            minimumDistances[name] = Mathf.Min(minimumDistances[name], sample.hitDistance);
+            latestSamples[name] = sample;
+        }
+
+        string bestName = null;
+        float bestScore = float.NegativeInfinity;
+        foreach (var pair in hitCounts)
+        {
+            int possibleHitThreshold = Mathf.Max(2, gazeVoiceMinimumHitSamples - 1);
+            float possibleDwellThreshold = Mathf.Min(0.2f, gazeVoiceMinimumDwellSeconds);
+            if (pair.Value < possibleHitThreshold ||
+                pair.Value * recordInterval < possibleDwellThreshold)
+            {
+                continue;
+            }
+
+            float score = pair.Value * 2f - minimumDistances[pair.Key];
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestName = pair.Key;
+                bestHitCount = pair.Value;
+            }
+        }
+
+        return string.IsNullOrWhiteSpace(bestName) ? null : latestSamples[bestName];
+    }
+
+    private static bool IsBackgroundSurfaceName(string objectName)
+    {
+        string normalized = objectName.ToLowerInvariant();
+        return normalized.Contains("floor") ||
+               normalized.Contains("ground") ||
+               normalized.Contains("wall") ||
+               normalized.Contains("ceiling") ||
+               normalized.Contains("window") ||
+               normalized.Contains("door");
     }
 
     private bool IsVoiceWindowAttentionQualified(GazeSample targetSample, int gazeStartIndex)
@@ -1183,7 +1279,15 @@ public class CameraPoseSender : MonoBehaviour
 
         foreach (RaycastHit hit in hits)
         {
-            InteractionTracker tracker = hit.collider.GetComponentInParent<InteractionTracker>();
+            InteractionTracker tracker = FindConversationalTrackerInParents(hit.collider.transform);
+
+            if (tracker == null && HasSystemTrackerInParents(hit.collider.transform))
+            {
+                // Controller/hand rig colliders must neither become gaze
+                // targets nor occlude a real scene object behind them.
+                continue;
+            }
+
             if (tracker != null && tracker.isActiveAndEnabled)
             {
                 if (tracker.attentionOnlyTarget)
@@ -1212,6 +1316,46 @@ public class CameraPoseSender : MonoBehaviour
         }
 
         bestHit = new RaycastHit();
+        return null;
+    }
+
+    private static bool HasSystemTrackerInParents(Transform source)
+    {
+        Transform current = source;
+        while (current != null)
+        {
+            InteractionTracker[] trackers = current.GetComponents<InteractionTracker>();
+            foreach (InteractionTracker tracker in trackers)
+            {
+                if (tracker != null && IsSystemInteractionTracker(tracker))
+                {
+                    return true;
+                }
+            }
+
+            current = current.parent;
+        }
+
+        return false;
+    }
+
+    private static InteractionTracker FindConversationalTrackerInParents(Transform source)
+    {
+        Transform current = source;
+        while (current != null)
+        {
+            InteractionTracker[] trackers = current.GetComponents<InteractionTracker>();
+            foreach (InteractionTracker tracker in trackers)
+            {
+                if (tracker != null && tracker.isActiveAndEnabled && !IsSystemInteractionTracker(tracker))
+                {
+                    return tracker;
+                }
+            }
+
+            current = current.parent;
+        }
+
         return null;
     }
 
@@ -1246,6 +1390,22 @@ public class CameraPoseSender : MonoBehaviour
         }
 
         return false;
+    }
+
+    private static bool IsSystemInteractionTracker(InteractionTracker tracker)
+    {
+        if (tracker == null)
+        {
+            return true;
+        }
+
+        string identity = (tracker.ContextName + " " + tracker.gameObject.name).ToLowerInvariant();
+        return identity.Contains("[buildingblock] handgrab") ||
+               identity.Contains("controllergrablocation") ||
+               identity.Contains("controller interactor") ||
+               identity.Contains("hand grab interactor") ||
+               identity.Contains("ovrcamerarig") ||
+               identity.Contains("tracking space");
     }
 
     private InteractionTracker TryGetOrCreateAvatarTracker(Collider hitCollider)
@@ -1603,7 +1763,7 @@ public class CameraPoseSender : MonoBehaviour
 
         foreach (InteractionTracker tracker in trackers)
         {
-            if (tracker == null || !tracker.isActiveAndEnabled)
+            if (tracker == null || !tracker.isActiveAndEnabled || IsSystemInteractionTracker(tracker))
             {
                 continue;
             }

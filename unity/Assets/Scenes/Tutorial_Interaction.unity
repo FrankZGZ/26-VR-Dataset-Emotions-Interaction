@@ -231,8 +231,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 3673df66324d8f34d9433049c54de631, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   _controller: {fileID: 357060221}
 --- !u!114 &22660594
 MonoBehaviour:
@@ -1440,6 +1440,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rayInteractor: {fileID: 67527443}
+  logUiHits: 0
 --- !u!114 &67527441
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3044,6 +3045,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 106f12093ffa3e24f967aa7a436a5e2a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  enableHaptics: 0
+  debugLogging: 0
   clip: {fileID: 2460798210113038985, guid: daac64e71ebab9643b14abba5f30ab1d, type: 3}
   leftAnchor: {fileID: 904226497}
   rightAnchor: {fileID: 590189778}
@@ -8656,7 +8659,7 @@ Transform:
   m_GameObject: {fileID: 420388621}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0.7071068, z: -0, w: 0.7071068}
-  m_LocalPosition: {x: 676.25, y: -195, z: 0}
+  m_LocalPosition: {x: 476.25, y: -727, z: 0}
   m_LocalScale: {x: 125, y: 125, z: 125}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -8925,6 +8928,11 @@ MonoBehaviour:
   - {fileID: 935507151}
   destroyAfterTeleport: []
   refreshAfterTeleport: []
+  hideQuestionnaireOnStart: 1
+  enableKeyboardExitTrigger: 1
+  keyboardExitTriggerKey: 101
+  repositionRigForSurvey: 1
+  applyLegacySceneResetAfterSurvey: 1
 --- !u!65 &440281686
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -14160,6 +14168,17 @@ MonoBehaviour:
   dominanceButtons: {fileID: 76407798}
   submitButton: {fileID: 1292024455}
   debugInfo: {fileID: 41205405}
+  createLikertPageAtRuntime: 1
+  autoEnableTaskRaysOnSurveyStart: 1
+  allowControllerButtonSubmit: 1
+  positionQuestionnaireInFrontOfCamera: 0
+  samNextButtonPosition: {x: 350, y: -500}
+  likertRoot: {fileID: 0}
+  likertPanelSize: {x: 980, y: 720}
+  likertStartPosition: {x: 52, y: -78}
+  likertItemSpacing: 46
+  likertSliderSize: {x: 300, y: 18}
+  likertWorldVerticalOffset: -2
   disableAfterSubmit:
   - {fileID: 2110378477}
   - {fileID: 717418488}
@@ -14167,6 +14186,7 @@ MonoBehaviour:
   - {fileID: 708223206}
   enableAfterSubmit:
   - {fileID: 1188519826}
+  hideQuestionnaireOnSceneStart: 1
 --- !u!114 &677408460
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -15804,7 +15824,7 @@ Transform:
   m_GameObject: {fileID: 708223206}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -1.8788228, y: -0.9906192, z: -14.453458}
+  m_LocalPosition: {x: -0.9394114, y: -0.4953096, z: -7.226729}
   m_LocalScale: {x: 0.13005, y: 0.13005, z: 0.13005}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -15975,6 +15995,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rayInteractor: {fileID: 717418492}
+  logUiHits: 0
 --- !u!114 &717418490
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -18931,6 +18952,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 106f12093ffa3e24f967aa7a436a5e2a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  enableHaptics: 0
+  debugLogging: 0
   clip: {fileID: 2460798210113038985, guid: daac64e71ebab9643b14abba5f30ab1d, type: 3}
   leftAnchor: {fileID: 904226497}
   rightAnchor: {fileID: 590189778}
@@ -21132,7 +21155,7 @@ Transform:
   m_GameObject: {fileID: 951191576}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 6.628, y: 1.0856192, z: 16.410458}
+  m_LocalPosition: {x: 3.314, y: 0.5428096, z: 8.205229}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -25957,7 +25980,7 @@ Transform:
   m_GameObject: {fileID: 1149728267}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0.9051088, z: -0, w: 0.42517996}
-  m_LocalPosition: {x: -1.162, y: 0.15038073, z: -14.66}
+  m_LocalPosition: {x: -0.581, y: 0.34, z: -7.33}
   m_LocalScale: {x: 0.68179995, y: 0.6818, z: 0.68179995}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -26070,6 +26093,7 @@ GameObject:
   - component: {fileID: 1157064148}
   - component: {fileID: 1157064147}
   - component: {fileID: 1157064149}
+  - component: {fileID: 1157064150}
   m_Layer: 0
   m_Name: SetupModule
   m_TagString: Untagged
@@ -26130,6 +26154,48 @@ MonoBehaviour:
   - {fileID: 708223206}
   - {fileID: 1495992791}
   - {fileID: 1149728267}
+--- !u!114 &1157064150
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1157064144}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 02841bb9192d57d4d86732e9929e4753, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  cameraRig: {fileID: 179926261}
+  backupTriggerObject: {fileID: 2110378477}
+  recordEyeGaze: 1
+  recordGazeObjectAttention: 1
+  useHeadForwardAsGazeFallback: 1
+  recordFaceExpressions: 1
+  recordHeartRatePlaceholder: 1
+  gazeConfidenceThreshold: 0.5
+  gazeRayMaxDistance: 20
+  gazeNearRayAngleDegrees: 14
+  gazeLongAttentionThresholdSeconds: 0.5
+  gazeVoiceMinimumHitSamples: 3
+  gazeVoiceMinimumDwellSeconds: 0.3
+  gazeAvatarObjectNameHints: Rocketbox,ReadyPlayerMe,DigitalHuman,SocialAgent,CompanionAvatar
+  autoAttachAvatarGazeTargets: 1
+  forceHideGazeDebugVisuals: 1
+  forceShowGazeDebugVisuals: 0
+  disableHandTrackingObjects: 0
+  handTrackingObjectNameHints: OVRHandDataSource,OVRLeftHandVisual,OVRRightHandVisual,OpenXRLeftHand,OpenXRRightHand,HandRayInteractor,HandRay,ControllerRay,ControllerRayInteractor,RayInteractor,OVRHands,UnityXRHands
+  sampleOnlyWhileVoiceRecording: 0
+  sampleOnVoiceRecordingEdges: 1
+  logRuntimeTrackingState: 1
+  writeLiveDebugSnapshot: 1
+  runtimeDebugIntervalSeconds: 5
+  showGazeDebugMarker: 0
+  showGazeDebugRay: 0
+  showGazeDebugOnlyWhileVoiceSampling: 0
+  gazeDebugMarkerSize: 0.12
+  gazeDebugDefaultDistance: 3
+  gazeDebugColor: {r: 0, g: 1, b: 0.25, a: 1}
 --- !u!1 &1163707487
 GameObject:
   m_ObjectHideFlags: 0
@@ -31644,7 +31710,7 @@ Transform:
   m_GameObject: {fileID: 1495992791}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 0.4207643, z: -0, w: 0.90717006}
-  m_LocalPosition: {x: -1.2628226, y: -0.9906192, z: -15.055458}
+  m_LocalPosition: {x: -0.6314113, y: -0.4953096, z: -7.527729}
   m_LocalScale: {x: 0.13005, y: 0.13005, z: 0.13005}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -44174,8 +44240,8 @@ RectTransform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2131755503}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 6.97}
-  m_LocalScale: {x: 0.008, y: 0.008, z: 0.008}
+  m_LocalPosition: {x: 0, y: 0, z: 3.485}
+  m_LocalScale: {x: 0.004, y: 0.004, z: 0.004}
   m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 187869277}
@@ -44187,7 +44253,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
-  m_AnchoredPosition: {x: 0, y: 2.53}
+  m_AnchoredPosition: {x: 0, y: 3.53}
   m_SizeDelta: {x: 1258, y: 495.99997}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &2134689147
@@ -44322,6 +44388,61 @@ Transform:
   - {fileID: 1169487844}
   m_Father: {fileID: 252143392}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2146000001
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2146000002}
+  - component: {fileID: 2146000003}
+  m_Layer: 0
+  m_Name: Tutorial Avatar Guide
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2146000002
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2146000001}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2146000003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2146000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8674ce9344db46fcb37a92211d68e1d9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  waitUntilHidden: {fileID: 2003944993}
+  startDelay: 0.5
+  avatarPrefab: {fileID: 7030998814401213132, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+  spawnBeside: {fileID: 708223212}
+  besideOffset: 0.8
+  fallbackDistance: 1.25
+  uiHeightAboveAvatar: 3.15
+  readyMessage: Talk to the avatar\n\nHold A on the right controller while you speak.\nRelease
+    A when you finish.
+  listeningMessage: Listening...\n\nKeep holding A while you speak.
+  completeMessage: Great!\n\nHold A whenever you want to talk to the avatar.
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -44338,3 +44459,4 @@ SceneRoots:
   - {fileID: 203208677}
   - {fileID: 1970385016}
   - {fileID: 2077670430}
+  - {fileID: 2146000002}

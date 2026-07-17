@@ -24,9 +24,11 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
     public float groundRayDistance = 5f;
     public float maximumFloorDifference = 0.75f;
     public LayerMask placementMask = ~0;
-    [Tooltip("Normalize the avatar's eye height once at scene start so a standing participant is not far above the avatar.")]
-    public bool normalizeAvatarEyeHeight = true;
-    public float defaultAvatarEyeHeight = 1.66f;
+    [Tooltip("Normalize the avatar's eye height once at scene start to match the participant without changing the experimental condition.")]
+    public bool normalizeAvatarEyeHeight = false;
+    [Tooltip("Fallback eye height used only when headset height is unavailable or implausible.")]
+    public float defaultAvatarEyeHeight = 1.60f;
+    public float minimumMatchedEyeHeight = 1.40f;
     public float maximumMatchedEyeHeight = 1.82f;
     public float minimumAvatarScale = 0.95f;
     public float maximumAvatarScale = 1.22f;
@@ -122,6 +124,13 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
         {
             NormalizeAvatarHeight(participantHead);
             PlaceNearParticipant(participantHead);
+            AvatarGroundAligner groundAligner = GetComponent<AvatarGroundAligner>();
+            if (groundAligner != null)
+            {
+                // Placement writes the root Y, so foot alignment must be the
+                // final operation or the earlier correction gets overwritten.
+                groundAligner.AlignFeetToGround();
+            }
         }
     }
 
@@ -129,6 +138,7 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
     {
         if (!normalizeAvatarEyeHeight)
         {
+            Debug.Log("[VRME] Avatar eye-height normalization disabled; using the authored avatar scale.");
             return;
         }
 
@@ -140,10 +150,10 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
         }
 
         float participantEyeHeight = Mathf.Max(0f, participantHead.position.y - authoredRootY);
-        float targetEyeHeight = Mathf.Clamp(
-            Mathf.Max(defaultAvatarEyeHeight, participantEyeHeight),
-            defaultAvatarEyeHeight,
-            maximumMatchedEyeHeight);
+        bool participantHeightIsPlausible = participantEyeHeight >= 1.0f && participantEyeHeight <= 2.2f;
+        float targetEyeHeight = participantHeightIsPlausible
+            ? Mathf.Clamp(participantEyeHeight, minimumMatchedEyeHeight, maximumMatchedEyeHeight)
+            : Mathf.Clamp(defaultAvatarEyeHeight, minimumMatchedEyeHeight, maximumMatchedEyeHeight);
         float scaleFactor = Mathf.Clamp(targetEyeHeight / currentEyeHeight, minimumAvatarScale, maximumAvatarScale);
         transform.localScale = transform.localScale * scaleFactor;
         bodyHeight *= scaleFactor;

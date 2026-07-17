@@ -9780,6 +9780,10 @@ MonoBehaviour:
   - {fileID: 1155298509192773236}
   - {fileID: 1973309251}
   hideQuestionnaireOnStart: 1
+  enableKeyboardExitTrigger: 1
+  keyboardExitTriggerKey: 101
+  repositionRigForSurvey: 1
+  applyLegacySceneResetAfterSurvey: 1
 --- !u!65 &240469364
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -77848,10 +77852,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1ee65a76ff79c8f479f48c370bf9275a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  startWalkingTime: 20
+  startWalkingTime: 30
   man: {fileID: 118544362}
   manCreaming: {fileID: 259126476}
-  manCreamingTime: 26
+  manCreamingTime: 36
 --- !u!1001 &2020567231
 PrefabInstance:
   m_ObjectHideFlags: 0

@@ -102,6 +102,15 @@ public class PaperAirplaneFlight : MonoBehaviour
 
     private void OnCollisionEnter(Collision collision)
     {
+        // The plane commonly still overlaps the controller/camera rig for one
+        // or two physics frames after release. Treating that as an obstacle
+        // stopped flight and halved the release velocity, making otherwise
+        // identical throws follow different trajectories.
+        if (collision != null && IsParticipantRigCollider(collision.transform))
+        {
+            return;
+        }
+
         // Check for splash object specifically
         if (isFlying && collision.gameObject == splashObject)
         {
@@ -161,6 +170,24 @@ public class PaperAirplaneFlight : MonoBehaviour
                 }
             }
         }
+    }
+
+    private static bool IsParticipantRigCollider(Transform collisionTransform)
+    {
+        for (Transform current = collisionTransform; current != null; current = current.parent)
+        {
+            string objectName = current.name;
+            if (objectName.IndexOf("ControllerGrabLocation", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                objectName.IndexOf("CenterEyeAnchor", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                objectName.IndexOf("Camera Offset", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                objectName.IndexOf("OVRCameraRig", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                objectName.IndexOf("Camera Rig", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public void ResetForRespawn()

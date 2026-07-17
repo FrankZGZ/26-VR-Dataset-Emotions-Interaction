@@ -128,7 +128,7 @@ public class DogMotion2 : MonoBehaviour
                 SetMovementSpeed(1.3f);
                 if (cnc != null)
                 {
-                    cnc.SetDestination(ball.transform.position);
+                    cnc.enabled = false;
                 }
                 isPreparingFetch = false;
                 fetchBallTarget = null;
@@ -140,10 +140,6 @@ public class DogMotion2 : MonoBehaviour
         if (dogState == DogState.ChasingBall && ball != null)
         {
             Debug.Log("Chasing the ball...");
-
-            // Set navigation target every frame
-            if (cnc != null)
-                cnc.SetDestination(ball.transform.position);
 
             // Only set animation when entering state or if animation is not playing
             if (!isWalkingAnimPlaying || !animator.GetCurrentAnimatorStateInfo(0).IsName("Walking"))
@@ -160,7 +156,27 @@ public class DogMotion2 : MonoBehaviour
             // sit at different heights. A 3D threshold can leave the dog circling
             // the ball forever even when its mouth is already beside it.
             float horizontalBallDistance = HorizontalDistance(transform.position, ball.transform.position);
-            if (horizontalBallDistance <= Mathf.Max(0.35f, catchBallDistance))
+            float catchDistance = Mathf.Max(0.35f, catchBallDistance);
+            if (horizontalBallDistance > catchDistance)
+            {
+                // Fetch movement must not depend on the Animator reaching an
+                // exact state name. Move directly toward the live ball target.
+                Vector3 toBall = ball.transform.position - transform.position;
+                toBall.y = 0f;
+                if (toBall.sqrMagnitude > 0.000001f)
+                {
+                    Vector3 direction = toBall.normalized;
+                    Quaternion targetFacing = Quaternion.LookRotation(direction, Vector3.up);
+                    transform.rotation = Quaternion.RotateTowards(
+                        transform.rotation,
+                        targetFacing,
+                        rotationThreshold * 180f * Time.deltaTime);
+                    float remainingTravel = Mathf.Max(0f, horizontalBallDistance - catchDistance);
+                    float step = Mathf.Min(1.3f * Time.deltaTime, remainingTravel);
+                    transform.position += direction * step;
+                }
+            }
+            if (horizontalBallDistance <= catchDistance)
             {
                 Debug.Log("Caught the ball! Start returning");
                 TennisBall caughtTennisBall = ball.GetComponent<TennisBall>();
@@ -249,7 +265,6 @@ public class DogMotion2 : MonoBehaviour
                 {
                     returnedBallBody.isKinematic = false;
                 }
-                ball.transform.position = transform.position + transform.forward * 0.7f + Vector3.up * 0.1f;
                 HasReturnedBallToPlayer = true;
                 InteractionTracker returnedTracker = returnedBall.GetComponent<InteractionTracker>();
                 if (returnedTracker != null)
@@ -259,7 +274,14 @@ public class DogMotion2 : MonoBehaviour
                 TennisBall returnedTennisBall = returnedBall.GetComponent<TennisBall>();
                 if (returnedTennisBall != null)
                 {
-                    returnedTennisBall.MarkFetchCompleted();
+                    Vector3 playerPosition = lookAtTarget != null
+                        ? lookAtTarget.position
+                        : transform.position - transform.forward;
+                    returnedTennisBall.ReturnToPlayerPickupPoint(playerPosition, transform.position);
+                }
+                else
+                {
+                    returnedBall.transform.position = transform.position + transform.forward * 0.7f + Vector3.up * 0.1f;
                 }
                 ball = null;
                 dogState = DogState.Normal;

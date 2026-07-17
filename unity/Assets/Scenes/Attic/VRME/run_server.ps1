@@ -1,4 +1,15 @@
 $ErrorActionPreference = "Stop"
+
+# Keep this legacy scene launcher, but always delegate to the single canonical
+# backend so scene-specific copies cannot silently drift out of sync.
+$canonicalLauncher = [System.IO.Path]::GetFullPath(
+    (Join-Path $PSScriptRoot "../../../../../vrme_vibevoice_pack/run_server.ps1")
+)
+if (Test-Path -LiteralPath $canonicalLauncher) {
+    & $canonicalLauncher
+    exit $LASTEXITCODE
+}
+
 Set-Location $PSScriptRoot
 
 $port = 8080

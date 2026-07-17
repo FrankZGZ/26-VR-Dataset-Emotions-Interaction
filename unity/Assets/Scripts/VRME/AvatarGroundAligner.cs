@@ -7,8 +7,8 @@ using UnityEngine;
 /// </summary>
 public class AvatarGroundAligner : MonoBehaviour
 {
-    [Range(0.1f, 3f)] public float rayStartAboveFeet = 0.75f;
-    [Range(1f, 10f)] public float rayDistance = 4f;
+    [Range(0.1f, 4f)] public float rayStartAboveFeet = 2.5f;
+    [Range(1f, 10f)] public float rayDistance = 6f;
     [Range(0.01f, 2f)] public float maximumCorrection = 1.25f;
 
     private IEnumerator Start()
@@ -19,8 +19,11 @@ public class AvatarGroundAligner : MonoBehaviour
         AlignFeetToGround();
     }
 
-    private void AlignFeetToGround()
+    public void AlignFeetToGround()
     {
+        // Include the prefab's non-skinned renderers. They provide the stable
+        // authored foot bound; animated SkinnedMeshRenderer bounds alone can
+        // extend roughly a metre below the visible feet in the prison idle pose.
         Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
         if (renderers.Length == 0)
         {
@@ -33,37 +36,28 @@ public class AvatarGroundAligner : MonoBehaviour
             avatarBounds.Encapsulate(renderers[i].bounds);
         }
 
-        Vector3 origin = new Vector3(
-            avatarBounds.center.x,
-            avatarBounds.min.y + rayStartAboveFeet,
-            avatarBounds.center.z);
-
-        RaycastHit[] hits = Physics.RaycastAll(
-            origin,
-            Vector3.down,
-            rayDistance,
-            ~0,
-            QueryTriggerInteraction.Ignore);
-
-        float bestGroundY = float.NegativeInfinity;
-        foreach (RaycastHit hit in hits)
+        float bestGroundY;
+        bool usedParticipantFloor = false;
+        if (!TryResolveGroundY(avatarBounds.center, avatarBounds.min.y, out bestGroundY))
         {
-            if (hit.transform == transform || hit.transform.IsChildOf(transform))
+            OVRCameraRig[] rigs = Object.FindObjectsByType<OVRCameraRig>(FindObjectsSortMode.None);
+            bool foundParticipantFloor = false;
+            foreach (OVRCameraRig rig in rigs)
             {
-                continue;
+                Transform eye = rig != null ? rig.centerEyeAnchor : null;
+                if (eye != null && TryResolveGroundY(eye.position, eye.position.y - 1.62f, out bestGroundY))
+                {
+                    foundParticipantFloor = true;
+                    usedParticipantFloor = true;
+                    break;
+                }
             }
 
-            if (hit.point.y <= avatarBounds.min.y + rayStartAboveFeet &&
-                hit.point.y > bestGroundY)
+            if (!foundParticipantFloor)
             {
-                bestGroundY = hit.point.y;
+                Debug.LogWarning("[VRME] Avatar ground alignment skipped: no ground collider below the avatar or participant.");
+                return;
             }
-        }
-
-        if (float.IsNegativeInfinity(bestGroundY))
-        {
-            Debug.LogWarning("[VRME] Avatar ground alignment skipped: no ground collider below the feet.");
-            return;
         }
 
         float correction = bestGroundY - avatarBounds.min.y;
@@ -74,6 +68,62 @@ public class AvatarGroundAligner : MonoBehaviour
         }
 
         transform.position += Vector3.up * correction;
-        Debug.Log("[VRME] Avatar feet aligned to ground. correctionY=" + correction.ToString("0.000"));
+        Debug.Log("[VRME] Avatar feet aligned to global floor. groundY=" + bestGroundY.ToString("0.000") +
+            ", correctionY=" + correction.ToString("0.000") +
+            ", source=" + (usedParticipantFloor ? "participant_floor_fallback" : "avatar_floor"));
+    }
+
+    private bool TryResolveGroundY(Vector3 horizontalPosition, float expectedFeetY, out float groundY)
+    {
+        Vector3 origin = new Vector3(
+            horizontalPosition.x,
+            expectedFeetY + rayStartAboveFeet,
+            horizontalPosition.z);
+        RaycastHit[] hits = Physics.RaycastAll(
+            origin,
+            Vector3.down,
+            rayDistance,
+            ~0,
+            QueryTriggerInteraction.Ignore);
+
+        groundY = 0f;
+        float bestScore = float.PositiveInfinity;
+        bool foundNamedFloor = false;
+        foreach (RaycastHit hit in hits)
+        {
+            if (hit.collider == null || hit.normal.y < 0.65f ||
+                hit.transform == transform || hit.transform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            bool namedFloor = LooksLikeFloor(hit.transform);
+            float score = Mathf.Abs(hit.point.y - expectedFeetY);
+            if ((namedFloor && !foundNamedFloor) ||
+                (namedFloor == foundNamedFloor && score < bestScore))
+            {
+                foundNamedFloor = namedFloor;
+                bestScore = score;
+                groundY = hit.point.y;
+            }
+        }
+
+        return !float.IsPositiveInfinity(bestScore);
+    }
+
+    private static bool LooksLikeFloor(Transform candidate)
+    {
+        for (Transform current = candidate; current != null; current = current.parent)
+        {
+            string objectName = current.name;
+            if (current.CompareTag("Ground") ||
+                objectName.IndexOf("floor", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                objectName.IndexOf("ground", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

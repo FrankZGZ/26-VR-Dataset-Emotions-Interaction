@@ -37,6 +37,11 @@ public class CharacterNavigationController : MonoBehaviour
 
     private void Update()
     {
+        if (animator == null)
+        {
+            return;
+        }
+
         int stateHashCached = Animator.StringToHash("Base Layer.Walking");
         if (animator.GetCurrentAnimatorStateInfo(0).fullPathHash == stateHashCached) { 
             if (transform.position != destinationVec)

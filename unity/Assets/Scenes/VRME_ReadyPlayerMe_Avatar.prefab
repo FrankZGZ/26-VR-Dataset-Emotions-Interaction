@@ -128,12 +128,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2f9e57d5388c4fc8a4cfbeac4127d991, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  serverUrl: ws://localhost:8080/
+  serverUrl: ws://127.0.0.1:8080/
   recordKey: 118
   sampleRate: 16000
   maxRecordSeconds: 12
   autoConnectOnStart: 0
-  connectTimeoutSeconds: 3
+  connectTimeoutSeconds: 10
+  reconnectDelaySeconds: 2
   showRuntimeMarker: 0
   markerColor: {r: 0.1, g: 0.6, b: 1, a: 1}
   scenePrompt: 

@@ -32717,6 +32717,10 @@ MonoBehaviour:
   destroyAfterTeleport: []
   refreshAfterTeleport: []
   hideQuestionnaireOnStart: 1
+  enableKeyboardExitTrigger: 1
+  keyboardExitTriggerKey: 101
+  repositionRigForSurvey: 1
+  applyLegacySceneResetAfterSurvey: 1
 --- !u!65 &1582229186
 BoxCollider:
   m_ObjectHideFlags: 0

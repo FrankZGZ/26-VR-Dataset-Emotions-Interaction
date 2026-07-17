@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using Oculus.Interaction;
 using Oculus.Interaction.Grab;
@@ -19,19 +20,38 @@ public class TennisBall : MonoBehaviour
     public bool keepAboveGround = true;
     public float groundSearchHeight = 2.0f;
     public float groundSearchDistance = 4.0f;
-    public float groundClearance = 0.015f;
+    [Tooltip("Small separation used only when recovering a ball that has actually entered the floor.")]
+    public float groundClearance = 0.002f;
+    [Tooltip("Normal contact settling is left to physics; only recover after this much floor penetration.")]
+    public float minimumGroundPenetrationForRecovery = 0.02f;
+    [Tooltip("Rate-limit floor recovery checks so they cannot fight the Rigidbody every frame.")]
+    public float groundRecoveryCheckInterval = 0.25f;
     public float maximumSnapUpDistance = 0.6f;
+
+    [Header("Play-area containment")]
+    public bool constrainToPlayArea = true;
+    [Tooltip("Maximum flat distance from the authored ball spawn before the throw is stopped at the boundary.")]
+    public float maximumHorizontalDistanceFromSpawn = 6.0f;
+    public float maximumHeightAboveSpawn = 3.0f;
+    public float maximumDepthBelowSpawn = 1.0f;
 
     private Rigidbody rb;
     private PhysicsMaterial physicsMaterial;
     private SphereCollider sphereCollider;
     private InteractionTracker interactionTracker;
+    private GrabInteractable grabInteractable;
+    private HandGrabInteractable handGrabInteractable;
     private IPointableElement pointableElement;
     private bool armedForUserThrow;
     private bool selectedByUser;
     private float lastUserHandContactAt = float.NegativeInfinity;
     private float ignoreUserHandContactUntil = float.NegativeInfinity;
+    private float nextGroundRecoveryCheckAt;
+    private Vector3 spawnPosition;
+    private Quaternion spawnRotation;
+    private float nextContainmentLogAt;
     private const float UserContactThrowWindowSeconds = 2.5f;
+    private const float ActiveControllerContactGraceSeconds = 0.2f;
 
     // for the dog to catch the ball
     public static TennisBall lastThrownBall;
@@ -46,6 +66,8 @@ public class TennisBall : MonoBehaviour
 
     void Awake()
     {
+        spawnPosition = transform.position;
+        spawnRotation = transform.rotation;
         rb = GetComponent<Rigidbody>();
         rb.mass = mass;
         rb.useGravity = true;
@@ -75,8 +97,14 @@ public class TennisBall : MonoBehaviour
 
     private void Start()
     {
-        GrabInteractable grabInteractable = GetComponent<GrabInteractable>();
-        pointableElement = grabInteractable != null ? grabInteractable.PointableElement : null;
+        grabInteractable = GetComponent<GrabInteractable>();
+        handGrabInteractable = GetComponent<HandGrabInteractable>();
+        Grabbable grabbable = GetComponent<Grabbable>();
+        pointableElement = grabbable != null
+            ? grabbable
+            : (grabInteractable != null
+                ? grabInteractable.PointableElement
+                : (handGrabInteractable != null ? handGrabInteractable.PointableElement : null));
         if (pointableElement != null)
         {
             pointableElement.WhenPointerEventRaised += OnPointerEventRaised;
@@ -111,6 +139,13 @@ public class TennisBall : MonoBehaviour
             }
         }
 
+        // Meta can visually/physically control the ball through a controller
+        // path whose Select event is not exposed to our tracker. Treat very
+        // recent controller contact as a short physical-ownership grace period
+        // so recovery/containment cannot pull the ball out of the hand.
+        bool activeControllerContact = Time.time - lastUserHandContactAt <= ActiveControllerContactGraceSeconds;
+        currentlyHeldByUser = currentlyHeldByUser || activeControllerContact;
+
         if (!armedForUserThrow && !hasBeenThrown &&
             Time.time - lastUserHandContactAt <= UserContactThrowWindowSeconds)
         {
@@ -126,7 +161,15 @@ public class TennisBall : MonoBehaviour
             armedForUserThrow = false;
             lastThrownBall = this;
             fetchThrownAt = Time.time;
-            Debug.Log("TennisBall thrown by user!");
+            Debug.Log("TennisBall thrown by user! velocity=" + rb.linearVelocity.ToString("F2") +
+                ", horizontalSpeed=" + horizontalVelocity.magnitude.ToString("0.00"));
+        }
+
+        // Register the throw first, then contain it. A very fast first frame
+        // must still start the dog-fetch sequence at the boundary.
+        if (!currentlyHeldByUser && ContainInsidePlayArea())
+        {
+            return;
         }
 
         if (rb.linearVelocity.magnitude < 0.1f)
@@ -162,7 +205,9 @@ public class TennisBall : MonoBehaviour
         armedForUserThrow = false;
         selectedByUser = false;
         lastUserHandContactAt = float.NegativeInfinity;
-        ignoreUserHandContactUntil = Time.time + 2f;
+        // Ignore only the release frame. A long grace period makes the returned
+        // ball feel dead when the participant immediately reaches for it.
+        ignoreUserHandContactUntil = Time.time + 0.2f;
         stillTime = 0f;
         fetchThrownAt = float.NegativeInfinity;
         if (lastThrownBall == this)
@@ -171,12 +216,116 @@ public class TennisBall : MonoBehaviour
         }
     }
 
+    public void ReturnToPlayerPickupPoint(Vector3 playerPosition, Vector3 dogPosition)
+    {
+        isCarriedByDog = false;
+
+        Vector3 awayFromPlayer = dogPosition - playerPosition;
+        awayFromPlayer.y = 0f;
+        if (awayFromPlayer.sqrMagnitude < 0.01f)
+        {
+            awayFromPlayer = Vector3.forward;
+        }
+        else
+        {
+            awayFromPlayer.Normalize();
+        }
+
+        // Place the ball outside the head/controller/body colliders. The old
+        // dog-forward drop point could land inside Camera Offset and permanently
+        // prevent Meta's grab selector from acquiring the ball again.
+        transform.position = new Vector3(playerPosition.x, dogPosition.y + 0.2f, playerPosition.z) +
+            awayFromPlayer * 0.75f;
+        MarkFetchCompleted();
+        SnapAboveGroundIfNeeded(force: true);
+
+        if (rb != null)
+        {
+            rb.isKinematic = false;
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            rb.WakeUp();
+        }
+
+        if (grabInteractable != null)
+        {
+            grabInteractable.enabled = true;
+        }
+        if (handGrabInteractable != null)
+        {
+            handGrabInteractable.enabled = true;
+        }
+
+        Debug.Log("[TennisBall] Returned to safe pickup point and re-enabled for continued interaction.");
+    }
+
     public void BeginDogCarry()
     {
         isCarriedByDog = true;
         armedForUserThrow = false;
         selectedByUser = false;
         lastUserHandContactAt = float.NegativeInfinity;
+    }
+
+    private bool ContainInsidePlayArea()
+    {
+        if (!constrainToPlayArea || isCarriedByDog || rb == null)
+        {
+            return false;
+        }
+
+        float maximumDistance = Mathf.Max(1f, maximumHorizontalDistanceFromSpawn);
+        Vector3 fromSpawn = transform.position - spawnPosition;
+        Vector3 horizontalOffset = new Vector3(fromSpawn.x, 0f, fromSpawn.z);
+        if (horizontalOffset.magnitude > maximumDistance)
+        {
+            Vector3 outward = horizontalOffset.normalized;
+            Vector3 containedPosition = spawnPosition + outward * maximumDistance;
+            containedPosition.y = transform.position.y;
+            rb.position = containedPosition;
+
+            float outwardSpeed = Vector3.Dot(rb.linearVelocity, outward);
+            if (outwardSpeed > 0f)
+            {
+                rb.linearVelocity -= outward * outwardSpeed;
+            }
+
+            LogContainment("horizontal play-area boundary");
+            return true;
+        }
+
+        if (transform.position.y > spawnPosition.y + maximumHeightAboveSpawn ||
+            transform.position.y < spawnPosition.y - maximumDepthBelowSpawn)
+        {
+            rb.isKinematic = false;
+            rb.position = spawnPosition;
+            rb.rotation = spawnRotation;
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            hasBeenThrown = false;
+            armedForUserThrow = false;
+            fetchThrownAt = float.NegativeInfinity;
+            stillTime = 0f;
+            if (lastThrownBall == this)
+            {
+                lastThrownBall = null;
+            }
+            LogContainment("vertical out-of-bounds reset");
+            return true;
+        }
+
+        return false;
+    }
+
+    private void LogContainment(string reason)
+    {
+        if (Time.time < nextContainmentLogAt)
+        {
+            return;
+        }
+
+        nextContainmentLogAt = Time.time + 1f;
+        Debug.Log("[TennisBall] Contained at " + reason + "; ball remains available for fetch.");
     }
 
     private void OnPointerEventRaised(PointerEvent evt)
@@ -191,12 +340,14 @@ public class TennisBall : MonoBehaviour
         else if (evt.Type == PointerEventType.Unselect)
         {
             selectedByUser = false;
+            StartCoroutine(EnsureDynamicAfterUserRelease());
             Debug.Log("[TennisBall] Released by user; waiting for throw velocity.");
         }
         else if (evt.Type == PointerEventType.Cancel)
         {
             selectedByUser = false;
             armedForUserThrow = false;
+            StartCoroutine(EnsureDynamicAfterUserRelease());
         }
     }
 
@@ -239,14 +390,6 @@ public class TennisBall : MonoBehaviour
         }
 
         lastUserHandContactAt = Time.time;
-        // A grab can begin while the dog is still carrying the ball. In that
-        // case Meta remembers the old kinematic state and may restore it on the
-        // next release, leaving the second throw suspended in mid-air.
-        if (!hasBeenThrown && rb.isKinematic)
-        {
-            rb.isKinematic = false;
-            Debug.Log("[TennisBall] Restored dynamic Rigidbody for the next user throw.");
-        }
         if (!armedForUserThrow)
         {
             armedForUserThrow = true;
@@ -263,13 +406,13 @@ public class TennisBall : MonoBehaviour
         }
         grabbable.InjectOptionalTargetTransform(transform);
         grabbable.InjectOptionalRigidbody(rb);
-        // Keep user grabs dynamic. Dog carrying still explicitly switches the
-        // body to kinematic, but a user release must always be able to receive
-        // Meta's calculated throw velocity.
-        grabbable.InjectOptionalKinematicWhileSelected(false);
+        // Meta's grab transformer moves a selected kinematic body without
+        // collision forces fighting the controller. ThrowWhenUnselected then
+        // restores dynamics and applies its measured release velocity.
+        grabbable.InjectOptionalKinematicWhileSelected(true);
         grabbable.InjectOptionalThrowWhenUnselected(true);
 
-        GrabInteractable grabInteractable = GetComponent<GrabInteractable>();
+        grabInteractable = GetComponent<GrabInteractable>();
         if (grabInteractable == null)
         {
             grabInteractable = gameObject.AddComponent<GrabInteractable>();
@@ -279,7 +422,7 @@ public class TennisBall : MonoBehaviour
         grabInteractable.UseClosestPointAsGrabSource = true;
         grabInteractable.ReleaseDistance = 0.45f;
 
-        HandGrabInteractable handGrabInteractable = GetComponent<HandGrabInteractable>();
+        handGrabInteractable = GetComponent<HandGrabInteractable>();
         if (handGrabInteractable == null)
         {
             handGrabInteractable = gameObject.AddComponent<HandGrabInteractable>();
@@ -309,12 +452,71 @@ public class TennisBall : MonoBehaviour
         }
     }
 
+    private bool IsActivelySelectedByUser()
+    {
+        if (selectedByUser)
+        {
+            return true;
+        }
+
+        if (grabInteractable != null)
+        {
+            foreach (var selectingInteractor in grabInteractable.SelectingInteractorViews)
+            {
+                if (selectingInteractor != null)
+                {
+                    return true;
+                }
+            }
+        }
+
+
+        if (handGrabInteractable != null)
+        {
+            foreach (var selectingInteractor in handGrabInteractable.SelectingInteractorViews)
+            {
+                if (selectingInteractor != null)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private IEnumerator EnsureDynamicAfterUserRelease()
+    {
+        // Let Meta apply its sampled throw velocity first. This is only a guard
+        // for a stale kinematic lock left behind by an interrupted grab.
+        yield return new WaitForFixedUpdate();
+        if (!isCarriedByDog && !IsActivelySelectedByUser() && rb != null && rb.isKinematic)
+        {
+            rb.isKinematic = false;
+            Debug.Log("[TennisBall] Cleared stale kinematic state after user release.");
+        }
+    }
+
     private void SnapAboveGroundIfNeeded(bool force)
     {
         if (!keepAboveGround || rb == null || sphereCollider == null)
         {
             return;
         }
+
+        // Never move the target out from under an active hand/controller grab.
+        if (!force && (selectedByUser ||
+            Time.time - lastUserHandContactAt <= ActiveControllerContactGraceSeconds ||
+            (interactionTracker != null && interactionTracker.isCurrentlyHeld)))
+        {
+            return;
+        }
+
+        if (!force && Time.time < nextGroundRecoveryCheckAt)
+        {
+            return;
+        }
+        nextGroundRecoveryCheckAt = Time.time + Mathf.Max(0.05f, groundRecoveryCheckInterval);
 
         if (!force && rb.linearVelocity.magnitude > 0.25f)
         {
@@ -332,7 +534,8 @@ public class TennisBall : MonoBehaviour
             transform.lossyScale.z);
         float targetY = groundHit.point.y + worldRadius + groundClearance;
         float currentY = transform.position.y;
-        if (currentY >= targetY - 0.005f)
+        float requiredRecovery = force ? 0.005f : Mathf.Max(0.005f, minimumGroundPenetrationForRecovery);
+        if (currentY >= targetY - requiredRecovery)
         {
             return;
         }

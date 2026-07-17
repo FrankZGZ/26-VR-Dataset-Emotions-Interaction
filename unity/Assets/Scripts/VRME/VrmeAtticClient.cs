@@ -11,7 +11,7 @@ using UnityEngine.SceneManagement;
 
 public class VrmeAtticClient : MonoBehaviour
 {
-    public string serverUrl = "ws://localhost:8080/";
+    public string serverUrl = "ws://127.0.0.1:8080/";
     public KeyCode recordKey = KeyCode.V;
     public bool enableKeyboardRecordKey = true;
     public bool enableControllerRecordButton = true;
@@ -20,7 +20,8 @@ public class VrmeAtticClient : MonoBehaviour
     public int sampleRate = 16000;
     public int maxRecordSeconds = 12;
     public bool autoConnectOnStart = false;
-    public float connectTimeoutSeconds = 3f;
+    public float connectTimeoutSeconds = 10f;
+    [Range(0.5f, 30f)] public float reconnectDelaySeconds = 2f;
     public bool showRuntimeMarker = true;
     public Color markerColor = new Color(0.1f, 0.6f, 1f, 1f);
     [TextArea(3, 8)] public string scenePrompt = "";
@@ -64,7 +65,6 @@ public class VrmeAtticClient : MonoBehaviour
     private readonly ConcurrentQueue<byte[]> pendingAudioTurns = new ConcurrentQueue<byte[]>();
     private ClientWebSocket websocket;
     private CancellationTokenSource cancellation;
-    private Task connectTask;
     private AudioSource audioSource;
     private StreamingPcmPlayer streamingPlayer;
     private AudioClip recordingClip;
@@ -77,13 +77,45 @@ public class VrmeAtticClient : MonoBehaviour
     private bool taskHighlightsActivated;
     private bool guidedTaskActive;
     private bool guidedTaskCompleted;
+    private CancellationTokenSource lifetimeCancellation;
     private SceneTaskHighlightSpec activeGuidedTaskSpec;
     private readonly List<GameObject> activeGuidedTaskObjects = new List<GameObject>();
     private readonly List<GameObject> activeGuidedTaskTargets = new List<GameObject>();
     private readonly List<GameObject> activeGuidedTaskMarkers = new List<GameObject>();
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetPersistentConnectionForPlaySession()
+    {
+        PersistentWebSocket.Close();
+    }
+
+#if UNITY_EDITOR
+    [UnityEditor.InitializeOnLoadMethod]
+    private static void RegisterEditorSocketCleanup()
+    {
+        UnityEditor.AssemblyReloadEvents.beforeAssemblyReload -= ClosePersistentSocketBeforeAssemblyReload;
+        UnityEditor.AssemblyReloadEvents.beforeAssemblyReload += ClosePersistentSocketBeforeAssemblyReload;
+        UnityEditor.EditorApplication.playModeStateChanged -= OnEditorPlayModeStateChanged;
+        UnityEditor.EditorApplication.playModeStateChanged += OnEditorPlayModeStateChanged;
+    }
+
+    private static void ClosePersistentSocketBeforeAssemblyReload()
+    {
+        PersistentWebSocket.Close();
+    }
+
+    private static void OnEditorPlayModeStateChanged(UnityEditor.PlayModeStateChange state)
+    {
+        if (state == UnityEditor.PlayModeStateChange.ExitingPlayMode)
+        {
+            PersistentWebSocket.Close();
+        }
+    }
+#endif
+
     private void Start()
     {
+        lifetimeCancellation = new CancellationTokenSource();
         audioSource = playbackAudioSource != null ? playbackAudioSource : GetComponent<AudioSource>();
         if (audioSource == null)
         {
@@ -110,6 +142,8 @@ public class VrmeAtticClient : MonoBehaviour
             Debug.Log("[VRME] Auto-attached InteractionTracker to " + attachedCount + " scene objects.");
         }
 
+        NormalizeLakeInteractionTrackers();
+
         if (autoAttachAvatarAttentionTracker)
         {
             int avatarTrackerCount = AttachAvatarAttentionTrackers();
@@ -120,6 +154,10 @@ public class VrmeAtticClient : MonoBehaviour
         {
             CreateRuntimeMarker();
         }
+
+        // The socket is shared across scene clients. Keep a lightweight
+        // connection loop alive even when the backend starts after Unity.
+        _ = MaintainPersistentConnectionAsync(lifetimeCancellation.Token);
 
         if (autoConnectOnStart && !autoIntroOnStart)
         {
@@ -197,6 +235,50 @@ public class VrmeAtticClient : MonoBehaviour
         {
             Debug.LogWarning("[VRME] Could not synchronize backend condition at startup: " + ex.Message);
             isReceivingBackendProactiveIntro = false;
+        }
+    }
+
+    private async Task MaintainPersistentConnectionAsync(CancellationToken lifetimeToken)
+    {
+        bool waitingForBackendLogged = false;
+        while (!lifetimeToken.IsCancellationRequested)
+        {
+            ClientWebSocket sharedSocket = PersistentWebSocket.Socket;
+            if (sharedSocket == null || sharedSocket.State != WebSocketState.Open)
+            {
+                if (!waitingForBackendLogged)
+                {
+                    Debug.Log("[VRME] Persistent connection waiting for backend at " + serverUrl + ".");
+                    waitingForBackendLogged = true;
+                }
+
+                await ConnectAsync();
+                sharedSocket = PersistentWebSocket.Socket;
+                if (sharedSocket != null && sharedSocket.State == WebSocketState.Open)
+                {
+                    websocket = sharedSocket;
+                    cancellation = PersistentWebSocket.Cancellation;
+                    waitingForBackendLogged = false;
+                    Debug.Log("[VRME] Persistent connection is ready for scene=" + SceneManager.GetActiveScene().name);
+                }
+            }
+            else
+            {
+                websocket = sharedSocket;
+                cancellation = PersistentWebSocket.Cancellation;
+                waitingForBackendLogged = false;
+            }
+
+            try
+            {
+                await Task.Delay(
+                    TimeSpan.FromSeconds(Mathf.Max(0.5f, reconnectDelaySeconds)),
+                    lifetimeToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
         }
     }
 
@@ -286,43 +368,13 @@ public class VrmeAtticClient : MonoBehaviour
         Gizmos.DrawWireSphere(transform.position, 0.22f);
     }
 
-    private Task ConnectAsync()
+    private async Task ConnectAsync()
     {
-        if (websocket != null && websocket.State == WebSocketState.Open)
-        {
-            return Task.CompletedTask;
-        }
-
-        if (websocket != null && websocket.State != WebSocketState.None)
-        {
-            ResetWebSocket();
-        }
-
-        if (connectTask != null && !connectTask.IsCompleted)
-        {
-            return connectTask;
-        }
-
-        connectTask = ConnectInternalAsync();
-        return connectTask;
-    }
-
-    private async Task ConnectInternalAsync()
-    {
-        cancellation?.Cancel();
-        cancellation = new CancellationTokenSource();
-        websocket?.Dispose();
-        websocket = new ClientWebSocket();
-
         try
         {
-            float timeoutSeconds = Mathf.Max(0.5f, connectTimeoutSeconds);
-            using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds)))
-            using (var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token, timeout.Token))
-            {
-                await websocket.ConnectAsync(new Uri(serverUrl), linked.Token);
-            }
-            Debug.Log("[VRME] Connected to " + serverUrl);
+            await PersistentWebSocket.ConnectAsync(serverUrl, connectTimeoutSeconds);
+            websocket = PersistentWebSocket.Socket;
+            cancellation = PersistentWebSocket.Cancellation;
         }
         catch (OperationCanceledException)
         {
@@ -336,19 +388,9 @@ public class VrmeAtticClient : MonoBehaviour
 
     private void ResetWebSocket()
     {
-        try
-        {
-            websocket?.Dispose();
-        }
-        catch
-        {
-            // Ignore cleanup races; a fresh connection will be created on the next voice turn.
-        }
-        finally
-        {
-            websocket = null;
-            connectTask = null;
-        }
+        PersistentWebSocket.Reset(websocket);
+        websocket = null;
+        cancellation = null;
     }
 
     private async Task SendConfigAsync()
@@ -359,6 +401,7 @@ public class VrmeAtticClient : MonoBehaviour
         }
 
         string sceneContext = sendSceneContextWithConfig ? BuildSceneContext() : (sendLiveContextOnlyForVoiceTurn ? "" : BuildSceneContext());
+        string effectiveScenePrompt = GetEffectiveScenePrompt();
         string json =
             "{\"type\":\"config\",\"streamReplyAudio\":" + (streamReplyAudio ? "true" : "false") +
             ",\"mode\":\"ai\"" +
@@ -370,7 +413,7 @@ public class VrmeAtticClient : MonoBehaviour
             "\",\"avatarCondition\":\"" + EscapeJson(PlayerData.avatarCondition) +
             "\",\"sceneName\":\"" + EscapeJson(SceneManager.GetActiveScene().name) +
             "\",\"sceneIndex\":" + PlayerData.currentSceneIndex +
-            ",\"scenePrompt\":\"" + EscapeJson(scenePrompt) +
+            ",\"scenePrompt\":\"" + EscapeJson(effectiveScenePrompt) +
             "\",\"sceneContext\":\"" + EscapeJson(sceneContext) + "\"}";
         byte[] payload = System.Text.Encoding.UTF8.GetBytes(json);
         await websocket.SendAsync(
@@ -437,7 +480,46 @@ public class VrmeAtticClient : MonoBehaviour
             "\",\"avatarCondition\":\"" + EscapeJson(PlayerData.avatarCondition) +
             "\",\"sceneName\":\"" + EscapeJson(SceneManager.GetActiveScene().name) +
             "\",\"sceneIndex\":" + PlayerData.currentSceneIndex +
-            ",\"sceneContext\":\"" + EscapeJson(turnContext) + "\"}";
+            ",\"scenePrompt\":\"" + EscapeJson(GetEffectiveScenePrompt()) +
+            "\",\"sceneContext\":\"" + EscapeJson(turnContext) + "\"}";
+    }
+
+    private string GetEffectiveScenePrompt()
+    {
+        if (!string.IsNullOrWhiteSpace(scenePrompt))
+        {
+            return scenePrompt.Trim();
+        }
+
+        return GetSceneDescription(SceneManager.GetActiveScene().name);
+    }
+
+    private static string GetSceneDescription(string sceneName)
+    {
+        string normalizedName = string.IsNullOrWhiteSpace(sceneName) ? "" : sceneName.Trim().ToLowerInvariant();
+        switch (normalizedName)
+        {
+            case "tutorial_interaction":
+                return "A VR interaction tutorial. The participant can practice grabbing and throwing the blue cubes, speak to the nearby avatar by holding the right-controller A button, and finish at the marked Exit.";
+            case "lake":
+                return "A lakeside VR scene. The guided interaction is to pick up either the highlighted airplane or the highlighted stone and throw it toward the highlighted target area by the lake.";
+            case "attic":
+                return "An attic VR scene. The guided interaction is to use the highlighted shield and move behind the highlighted safe position.";
+            case "puppies":
+                return "A VR scene with puppies. The guided interaction is to pick up the highlighted tennis ball and throw it toward the highlighted puppy.";
+            case "solitaryconfinement":
+                return "A solitary-confinement VR scene. The guided interaction is to use one of the highlighted movable cell objects and move or throw it toward the highlighted door target.";
+            case "tunnel":
+                return "A dark tunnel VR scene. The guided interaction is to take the highlighted flashlight and move with it toward the highlighted position in the tunnel.";
+            case "elephant":
+                return "A VR scene with an elephant. The guided interaction is to pick up the highlighted banana and throw it toward the highlighted elephant.";
+            case "real":
+                return "A mixed-reality transition scene used after the immersive VR scenes.";
+            case "endscene":
+                return "The experiment completion scene; no further guided object interaction is required.";
+            default:
+                return "VR scene named " + (string.IsNullOrWhiteSpace(sceneName) ? "unknown" : sceneName.Trim()) + ".";
+        }
     }
 
     private void LogTurnContextSent(string turnContext)
@@ -458,7 +540,7 @@ public class VrmeAtticClient : MonoBehaviour
         var heldObjects = new List<string>();
         foreach (InteractionTracker tracker in trackers)
         {
-            if (tracker == null || !tracker.isActiveAndEnabled || tracker.attentionOnlyTarget)
+            if (tracker == null || !tracker.isActiveAndEnabled || tracker.attentionOnlyTarget || IsSystemInteractionTracker(tracker))
             {
                 continue;
             }
@@ -472,6 +554,22 @@ public class VrmeAtticClient : MonoBehaviour
 
         heldObjects.Sort(StringComparer.OrdinalIgnoreCase);
         return heldObjects.Count == 0 ? "none" : string.Join(", ", heldObjects);
+    }
+
+    private static bool IsSystemInteractionTracker(InteractionTracker tracker)
+    {
+        if (tracker == null)
+        {
+            return true;
+        }
+
+        string identity = (tracker.ContextName + " " + tracker.gameObject.name).ToLowerInvariant();
+        return identity.Contains("[buildingblock] handgrab") ||
+               identity.Contains("controllergrablocation") ||
+               identity.Contains("controller interactor") ||
+               identity.Contains("hand grab interactor") ||
+               identity.Contains("ovrcamerarig") ||
+               identity.Contains("tracking space");
     }
 
     private string BuildImmediateUnityStateContext()
@@ -588,15 +686,37 @@ public class VrmeAtticClient : MonoBehaviour
             return;
         }
 
-        const int maxAutoIntroAttempts = 4;
-        for (int attempt = 1; attempt <= maxAutoIntroAttempts; attempt++)
+        bool waitingForConnectionLogged = false;
+        int sendAttempt = 0;
+        while (!autoIntroSent && isActiveAndEnabled &&
+               lifetimeCancellation != null && !lifetimeCancellation.IsCancellationRequested)
         {
-            if (autoIntroSent || !isActiveAndEnabled)
+            websocket = PersistentWebSocket.Socket;
+            cancellation = PersistentWebSocket.Cancellation;
+            if (websocket == null || websocket.State != WebSocketState.Open)
             {
-                return;
+                if (!waitingForConnectionLogged)
+                {
+                    Debug.Log("[VRME] Auto briefing is waiting for the persistent backend connection.");
+                    waitingForConnectionLogged = true;
+                }
+
+                try
+                {
+                    await Task.Delay(
+                        TimeSpan.FromSeconds(Mathf.Max(0.5f, reconnectDelaySeconds)),
+                        lifetimeCancellation.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                continue;
             }
 
-            Debug.Log("[VRME] Auto briefing fallback sending. scene=" + SceneManager.GetActiveScene().name + ", attempt=" + attempt);
+            waitingForConnectionLogged = false;
+            sendAttempt++;
+            Debug.Log("[VRME] Auto briefing fallback sending. scene=" + SceneManager.GetActiveScene().name + ", attempt=" + sendAttempt);
             bool sent = await SendTextPromptAsync(introPrompt, "auto_briefing");
             if (sent)
             {
@@ -610,11 +730,18 @@ public class VrmeAtticClient : MonoBehaviour
                 return;
             }
 
-            Debug.LogWarning("[VRME] Auto briefing attempt failed. Will retry if attempts remain. attempt=" + attempt);
-            await Task.Delay(TimeSpan.FromSeconds(2f));
+            Debug.LogWarning("[VRME] Auto briefing send failed; connection maintenance will reconnect before another send. attempt=" + sendAttempt);
+            try
+            {
+                await Task.Delay(
+                    TimeSpan.FromSeconds(Mathf.Max(0.5f, reconnectDelaySeconds)),
+                    lifetimeCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
         }
-
-        Debug.LogWarning("[VRME] Auto briefing failed after retry attempts. It will not be marked sent.");
     }
 
     private string BuildAutoTaskBriefingPrompt()
@@ -639,12 +766,14 @@ public class VrmeAtticClient : MonoBehaviour
         string normalizedName = string.IsNullOrWhiteSpace(sceneName) ? "" : sceneName.Trim().ToLowerInvariant();
         switch (normalizedName)
         {
+            case "tutorial_interaction":
+                return "Hold the right-controller A button to speak with the nearby avatar, then practice grabbing and throwing a blue cube before using the marked Exit.";
             case "puppies":
                 return "Use the highlighted tennis ball and throw it toward the highlighted puppy.";
             case "elephant":
                 return "Use the highlighted banana and throw it toward the highlighted elephant.";
             case "lake":
-                return "Use the highlighted paper plane and throw it toward the highlighted lake target area.";
+                return "Use either the highlighted airplane or the highlighted stone and throw it toward the highlighted lake target area.";
             case "solitaryconfinement":
                 return "Use the highlighted prison object and move or throw it toward the highlighted target area.";
             case "tunnel":
@@ -684,16 +813,13 @@ public class VrmeAtticClient : MonoBehaviour
         foreach (string objectName in spec.ObjectNames)
         {
             GameObject taskObject = FindSceneObjectByNameHint(objectName);
-            if (taskObject == null)
+            if (taskObject == null || activeGuidedTaskObjects.Contains(taskObject))
             {
                 continue;
             }
 
             AddOutlineHighlight(taskObject, taskObjectHighlightColor, taskObjectOutlineWidth);
-            if (!activeGuidedTaskObjects.Contains(taskObject))
-            {
-                activeGuidedTaskObjects.Add(taskObject);
-            }
+            activeGuidedTaskObjects.Add(taskObject);
             objectCount++;
         }
 
@@ -766,7 +892,7 @@ public class VrmeAtticClient : MonoBehaviour
                     0.75f);
             case "lake":
                 return new SceneTaskHighlightSpec(
-                    new[] { "PaperPlane", "Airplane", "Plane" },
+                    new[] { "Airplane", "Stone" },
                     new[] { "Target" },
                     "Lake target",
                     GuidedTaskCompletionMode.ObjectNearTarget,
@@ -789,7 +915,7 @@ public class VrmeAtticClient : MonoBehaviour
                     "Tunnel target",
                     GuidedTaskCompletionMode.PlayerAndObjectNearTarget,
                     TaskMarkerPlacement.Ground,
-                    1.6f,
+                    0.55f,
                     1.35f,
                     true,
                     3f);
@@ -1268,7 +1394,7 @@ public class VrmeAtticClient : MonoBehaviour
         guidedTaskActive = false;
         ClearGuidedTaskHighlights();
         Debug.Log("[VRME] Guided task completed. scene=" + SceneManager.GetActiveScene().name + ", source=" + completionSource);
-        TriggerGuidedTaskSurveyIfAvailable();
+        Debug.Log("[VRME] Conversation and scene interaction remain active until the participant enters the Exit trigger.");
     }
 
     private void ClearGuidedTaskHighlights()
@@ -1448,7 +1574,7 @@ public class VrmeAtticClient : MonoBehaviour
                 cancellation.Token);
             Debug.Log("[VRME] Sent text prompt. source=" + sourceLabel + ", chars=" + textPrompt.Length);
 
-            Task receiveTask = ReceiveReplyAsync();
+            Task<bool> receiveTask = ReceiveReplyAsync();
             Task timeoutTask = Task.Delay(TimeSpan.FromSeconds(Mathf.Max(5f, textPromptReplyTimeoutSeconds)));
             Task completedTask = await Task.WhenAny(receiveTask, timeoutTask);
             if (completedTask != receiveTask)
@@ -1458,8 +1584,12 @@ public class VrmeAtticClient : MonoBehaviour
                 return false;
             }
 
-            await receiveTask;
-            return true;
+            bool receivedReply = await receiveTask;
+            if (!receivedReply)
+            {
+                Debug.LogWarning("[VRME] Text prompt reached a stale closed WebSocket. The caller will reconnect and retry. source=" + sourceLabel);
+            }
+            return receivedReply;
         }
         catch (Exception ex)
         {
@@ -1473,7 +1603,7 @@ public class VrmeAtticClient : MonoBehaviour
         }
     }
 
-    private async Task SendAudioAsync(byte[] wavBytes)
+    private async Task SendAudioAsync(byte[] wavBytes, bool retryAfterStaleClose = true)
     {
         if (isSending)
         {
@@ -1483,6 +1613,7 @@ public class VrmeAtticClient : MonoBehaviour
         }
 
         isSending = true;
+        bool retryCurrentTurn = false;
         try
         {
             if (isReceivingBackendProactiveIntro)
@@ -1515,17 +1646,31 @@ public class VrmeAtticClient : MonoBehaviour
             LogTurnContextSent(turnContext);
             Debug.Log("[VRME] Sent audio_turn wav bytes: " + wavBytes.Length + ", base64Chars=" + wavBase64.Length);
 
-            await ReceiveReplyAsync();
+            bool receivedReply = await ReceiveReplyAsync();
+            if (!receivedReply && retryAfterStaleClose)
+            {
+                retryCurrentTurn = true;
+                Debug.LogWarning("[VRME] Voice turn reached a stale closed WebSocket; reconnecting and retrying once.");
+            }
         }
         catch (Exception ex)
         {
             Debug.LogWarning("[VRME] Send failed: " + ex.Message);
             ResetWebSocket();
+            if (retryAfterStaleClose)
+            {
+                retryCurrentTurn = true;
+                Debug.LogWarning("[VRME] Voice transport failed before a reply; reconnecting and retrying once.");
+            }
         }
         finally
         {
             isSending = false;
-            if (pendingAudioTurns.TryDequeue(out byte[] nextWavBytes))
+            if (retryCurrentTurn)
+            {
+                _ = SendAudioAsync(wavBytes, false);
+            }
+            else if (pendingAudioTurns.TryDequeue(out byte[] nextWavBytes))
             {
                 Debug.Log("[VRME] Sending queued voice turn. remaining=" + pendingAudioTurns.Count);
                 _ = SendAudioAsync(nextWavBytes);
@@ -1547,6 +1692,9 @@ public class VrmeAtticClient : MonoBehaviour
         using (var writer = new StringWriter())
         {
             var currentHeldObjects = new List<string>();
+            writer.WriteLine("[STATIC_SCENE_DESCRIPTION]");
+            writer.WriteLine(GetEffectiveScenePrompt());
+            writer.WriteLine("[/STATIC_SCENE_DESCRIPTION]");
             writer.WriteLine("[INTERACTABLE_OBJECT_STATES]");
             writer.WriteLine("scene=" + SceneManager.GetActiveScene().name);
             if (trackers.Length == 0)
@@ -1557,7 +1705,7 @@ public class VrmeAtticClient : MonoBehaviour
             {
                 foreach (InteractionTracker tracker in trackers)
                 {
-                    if (tracker == null || !tracker.isActiveAndEnabled) continue;
+                    if (tracker == null || !tracker.isActiveAndEnabled || IsSystemInteractionTracker(tracker)) continue;
 
                     tracker.RefreshCurrentHeldState();
                     Vector3 objectPosition = tracker.transform.position;
@@ -1609,7 +1757,7 @@ public class VrmeAtticClient : MonoBehaviour
 
         foreach (InteractionTracker tracker in trackers)
         {
-            if (tracker == null || !tracker.isActiveAndEnabled || tracker.attentionOnlyTarget)
+            if (tracker == null || !tracker.isActiveAndEnabled || tracker.attentionOnlyTarget || IsSystemInteractionTracker(tracker))
             {
                 continue;
             }
@@ -1623,6 +1771,9 @@ public class VrmeAtticClient : MonoBehaviour
 
         using (var writer = new StringWriter())
         {
+            writer.WriteLine("[STATIC_SCENE_DESCRIPTION]");
+            writer.WriteLine(GetEffectiveScenePrompt());
+            writer.WriteLine("[/STATIC_SCENE_DESCRIPTION]");
             writer.WriteLine("[CURRENT_HELD_OBJECTS]");
             if (currentHeldObjects.Count == 0)
             {
@@ -2191,6 +2342,71 @@ public class VrmeAtticClient : MonoBehaviour
         return attachedCount;
     }
 
+    private void NormalizeLakeInteractionTrackers()
+    {
+        if (!string.Equals(SceneManager.GetActiveScene().name, "Lake", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        InteractionTracker[] trackers = FindObjectsByType<InteractionTracker>(FindObjectsSortMode.None);
+        int airplanes = 0;
+        int stones = 0;
+        int excluded = 0;
+        foreach (InteractionTracker tracker in trackers)
+        {
+            if (tracker == null)
+            {
+                continue;
+            }
+
+            if (IsInNamedHierarchy(tracker.transform, "Airplane1", "Airplane2"))
+            {
+                tracker.displayName = "paper airplane";
+                airplanes++;
+                continue;
+            }
+
+            if (IsInNamedHierarchy(tracker.transform, "Stone1", "Stone2"))
+            {
+                tracker.displayName = "stone";
+                stones++;
+                continue;
+            }
+
+            // Lake dialogue is intentionally restricted to its two task-object
+            // categories. Water/splash/telescope helpers must never become a
+            // spoken gaze or interaction target.
+            if (!tracker.attentionOnlyTarget && !IsSystemInteractionTracker(tracker))
+            {
+                tracker.enabled = false;
+                excluded++;
+            }
+        }
+
+        Debug.Log("[VRME] Lake interaction context normalized. airplaneTrackers=" + airplanes +
+            ", stoneTrackers=" + stones + ", excludedTrackers=" + excluded + ".");
+    }
+
+    private static bool IsInNamedHierarchy(Transform item, params string[] objectNames)
+    {
+        Transform current = item;
+        while (current != null)
+        {
+            foreach (string objectName in objectNames)
+            {
+                if (string.Equals(current.name, objectName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            current = current.parent;
+        }
+
+        return false;
+    }
+
     private GameObject ResolveAvatarAttentionRoot(GameObject sourceObject, string[] hints)
     {
         if (sourceObject == null)
@@ -2561,7 +2777,7 @@ public class VrmeAtticClient : MonoBehaviour
         return $"({value.x:0.00},{value.y:0.00},{value.z:0.00})";
     }
 
-    private async Task ReceiveReplyAsync()
+    private async Task<bool> ReceiveReplyAsync()
     {
         byte[] buffer = new byte[8192];
         bool receivingStream = false;
@@ -2579,7 +2795,7 @@ public class VrmeAtticClient : MonoBehaviour
                     {
                         Debug.LogWarning("[VRME] WebSocket closed after this reply. The next voice turn will reconnect automatically.");
                         ResetWebSocket();
-                        return;
+                        return false;
                     }
 
                     stream.Write(buffer, 0, result.Count);
@@ -2630,17 +2846,17 @@ public class VrmeAtticClient : MonoBehaviour
                 {
                     mainThreadActions.Enqueue(EndPcmStream);
                     Debug.Log("[VRME] Audio stream ended. WebSocket remains available for the next voice turn if the server keeps it open.");
-                    return;
+                    return true;
                 }
 
                 if (text.Contains("\"audio_stream_error\""))
                 {
                     Debug.LogWarning("[VRME] Audio stream error: " + text);
-                    return;
+                    return false;
                 }
 
                 Debug.Log("[VRME] Text reply: " + text);
-                return;
+                return true;
             }
 
             if (receivingStream)
@@ -2651,7 +2867,7 @@ public class VrmeAtticClient : MonoBehaviour
             }
 
             mainThreadActions.Enqueue(() => PlayWav(payload));
-            return;
+            return true;
         }
     }
 
@@ -3078,24 +3294,145 @@ public class VrmeAtticClient : MonoBehaviour
         }
     }
 
-    private async void OnDestroy()
+    private static class PersistentWebSocket
     {
-        try
+        private static readonly object StateGate = new object();
+        private static readonly SemaphoreSlim ConnectGate = new SemaphoreSlim(1, 1);
+        private static ClientWebSocket socket;
+        private static CancellationTokenSource cancellationSource;
+        private static string connectedUrl = "";
+
+        public static ClientWebSocket Socket
         {
-            cancellation?.Cancel();
-            if (websocket != null && websocket.State == WebSocketState.Open)
+            get
             {
-                await websocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Scene closed", CancellationToken.None);
+                lock (StateGate)
+                {
+                    return socket;
+                }
             }
         }
-        catch
+
+        public static CancellationTokenSource Cancellation
         {
-            // Ignore shutdown races while Unity unloads the scene.
+            get
+            {
+                lock (StateGate)
+                {
+                    return cancellationSource;
+                }
+            }
         }
-        finally
+
+        public static async Task ConnectAsync(string url, float timeoutSeconds)
         {
-            websocket?.Dispose();
-            cancellation?.Dispose();
+            await ConnectGate.WaitAsync();
+            try
+            {
+                lock (StateGate)
+                {
+                    if (socket != null && socket.State == WebSocketState.Open &&
+                        string.Equals(connectedUrl, url, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Debug.Log("[VRME] Reusing persistent WebSocket for scene=" + SceneManager.GetActiveScene().name);
+                        return;
+                    }
+
+                    DisposeLocked();
+                    cancellationSource = new CancellationTokenSource();
+                    socket = new ClientWebSocket();
+                    socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(10);
+                    connectedUrl = url;
+                }
+
+                ClientWebSocket connectingSocket;
+                CancellationToken persistentToken;
+                lock (StateGate)
+                {
+                    connectingSocket = socket;
+                    persistentToken = cancellationSource.Token;
+                }
+
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(Mathf.Max(0.5f, timeoutSeconds))))
+                using (var linked = CancellationTokenSource.CreateLinkedTokenSource(persistentToken, timeout.Token))
+                {
+                    await connectingSocket.ConnectAsync(new Uri(url), linked.Token);
+                }
+
+                Debug.Log("[VRME] Opened persistent WebSocket to " + url);
+            }
+            catch
+            {
+                lock (StateGate)
+                {
+                    DisposeLocked();
+                }
+                throw;
+            }
+            finally
+            {
+                ConnectGate.Release();
+            }
         }
+
+        public static void Reset(ClientWebSocket expectedSocket)
+        {
+            lock (StateGate)
+            {
+                if (expectedSocket == null || socket != expectedSocket)
+                {
+                    return;
+                }
+
+                DisposeLocked();
+            }
+        }
+
+        public static void Close()
+        {
+            lock (StateGate)
+            {
+                DisposeLocked();
+            }
+        }
+
+        private static void DisposeLocked()
+        {
+            try
+            {
+                cancellationSource?.Cancel();
+                socket?.Dispose();
+            }
+            catch
+            {
+                // Ignore cleanup races; the next voice turn can create a fresh connection.
+            }
+            finally
+            {
+                socket = null;
+                cancellationSource?.Dispose();
+                cancellationSource = null;
+                connectedUrl = "";
+            }
+        }
+    }
+
+    private void OnApplicationQuit()
+    {
+        PersistentWebSocket.Close();
+    }
+
+    private void OnDestroy()
+    {
+        lifetimeCancellation?.Cancel();
+        lifetimeCancellation?.Dispose();
+        lifetimeCancellation = null;
+        // Scene changes replace the avatar GameObject but deliberately keep the
+        // shared WebSocket alive. The next scene sends a fresh config/prompt on
+        // the same connection. Only application quit or a real socket failure
+        // closes it.
+        websocket = null;
+        cancellation = null;
+        Debug.Log("[VRME] Scene client destroyed; persistent WebSocket retained for the next scene.");
     }
 }
