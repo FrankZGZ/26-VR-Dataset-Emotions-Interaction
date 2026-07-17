@@ -162,11 +162,11 @@ public class TeleportationEventListener : MonoBehaviour
         }
 
         HideConversationalAvatarsForSurvey();
-        HandleTeleportPadInteraction();
         if (repositionRigForSurvey)
         {
             TeleportToOrigin();
         }
+        HandleTeleportPadInteraction();
     }
 
     public void TriggerQuestionnaireFromGuidedTask()
@@ -445,6 +445,7 @@ public class TeleportationEventListener : MonoBehaviour
         // renderer, or ray behaviour has been disabled by the gameplay setup.
         EnableQuestionnaireRay(leftTaskRay, "left");
         EnableQuestionnaireRay(rightTaskRay, "right");
+        StartCoroutine(ReassertQuestionnaireRaysForOpeningFrames());
 
         if (applyLegacySceneResetAfterSurvey)
         {
@@ -612,6 +613,18 @@ public class TeleportationEventListener : MonoBehaviour
             taskRay.activeSelf + ", activeInHierarchy=" + taskRay.activeInHierarchy);
     }
 
+    private IEnumerator ReassertQuestionnaireRaysForOpeningFrames()
+    {
+        // A startup ray suppressor can already be part-way through its frame
+        // when SAM is activated. Reassert the dedicated UI rays afterwards.
+        for (int frame = 0; frame < 3; frame++)
+        {
+            yield return new WaitForEndOfFrame();
+            EnableQuestionnaireRay(leftTaskRay, "left");
+            EnableQuestionnaireRay(rightTaskRay, "right");
+        }
+    }
+
     private void TeleportToOrigin()
     {
         if (ovrCameraRig == null)
@@ -621,10 +634,13 @@ public class TeleportationEventListener : MonoBehaviour
         }
 
         // 位置
+        Vector3 previousPosition = ovrCameraRig.transform.position;
         ovrCameraRig.transform.position = teleportTargetPosition;
 
         // 朝向
         ovrCameraRig.transform.rotation = Quaternion.Euler(0, teleportTargetYRotation, 0);
+        Debug.Log("[Survey] Repositioned XR rig for questionnaire from " + previousPosition +
+            " to " + ovrCameraRig.transform.position + ", yaw=" + teleportTargetYRotation + ".");
     }
 
 }

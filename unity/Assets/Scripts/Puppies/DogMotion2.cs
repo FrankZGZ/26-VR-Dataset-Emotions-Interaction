@@ -20,6 +20,9 @@ public class DogMotion2 : MonoBehaviour
     private Quaternion targetRotation;
     private float rotationThreshold = 1f;
     public float lookSpeed = 2f;
+    [Tooltip("Failsafe duration so a petting animation can never block later ball fetching.")]
+    public float interactionTimeout = 5f;
+    private float interactionStartedAt = float.NegativeInfinity;
 
     // -- Added: Sit down after long period of inactivity --
     [Tooltip("If inactive for more than this many seconds, the dog will sit indefinitely")]
@@ -374,6 +377,7 @@ public class DogMotion2 : MonoBehaviour
             {
                 isPreparingInteraction = false;
                 isInteracting = true;
+                interactionStartedAt = Time.time;
                 animator.SetBool("playInteraction", true);
                 return;
             }
@@ -382,9 +386,19 @@ public class DogMotion2 : MonoBehaviour
         // Interacting
         if (isInteracting)
         {
-            Debug.Log("Interacting...");
-            if (!st.IsTag("Interaction") && st.normalizedTime >= 1f)
+            // End when the interaction clip completes. The old condition waited
+            // for a non-interaction state with normalizedTime >= 1, which could
+            // leave the dog permanently busy and prevent later fetch attempts.
+            bool interactionClipFinished = st.IsTag("Interaction") && st.normalizedTime >= 0.98f;
+            bool interactionTimedOut = Time.time - interactionStartedAt >= Mathf.Max(1f, interactionTimeout);
+            if (interactionClipFinished || interactionTimedOut)
+            {
+                if (interactionTimedOut)
+                {
+                    Debug.LogWarning("[Puppies] Dog interaction timed out; restoring fetch availability.");
+                }
                 EndInteraction();
+            }
             return;
         }
 
@@ -525,6 +539,8 @@ public class DogMotion2 : MonoBehaviour
     {
         animator.SetBool("playInteraction", false);
         isInteracting = false;
+        isPreparingInteraction = false;
+        interactionStartedAt = float.NegativeInfinity;
         cooldown = 0;
         lastChange = now;
         lastInteractionTime = Time.time;

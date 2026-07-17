@@ -157,7 +157,7 @@ ELEVENLABS_TONE_PRESETS = {
             "- If the user looks at the cup but the task target is elsewhere: "
             "'The cup is not the current target. Use the highlighted object with the highlighted mark.'\n"
             "- If the user looks at the avatar: "
-            "'You are facing the avatar. The task remains the highlighted object and target.'"
+            "'You are looking at me. The task remains the highlighted object and target.'"
         ),
     },
     "submissive": {
@@ -896,6 +896,7 @@ async def generate_reply(
             "UNITY_CONTEXT_SUMMARY, when present, is the freshest compact Unity state at voice release and has priority for currentAttention and currentHeldObjects. "
             "If UNITY_CONTEXT_SUMMARY says currentHeldObjects=none, do not say the participant is holding or still has any object, even if older history says it was grabbed. "
             "If currentAttention names Avatar/Social Agent, treat that as valid social attention to the avatar, not as missing gaze and not as attention to a nearby object. "
+            "In participant-facing speech, the avatar must refer to itself as me: say 'you are looking at me', never 'you are looking at/facing the avatar'. "
             "However, CURRENT_HELD_OBJECTS is stronger task-grounding evidence than avatar/social attention. If an object is currently held, respond about that object and the task instead of narrating that the participant is looking at the avatar. "
             "Repeated controller-contact events for the same object plus measurable object-position change during the current voice window are direct evidence that the participant handled or moved that object during this turn. "
             "This controller-manipulation evidence is stronger than possible gaze and should be mentioned first, but it is not proof that the object remains held at voice release. "
@@ -1144,7 +1145,7 @@ def build_current_turn_grounded_reply(
             if same_attention:
                 state = f"You are holding the {held_name} and may be looking at it." if attention_confidence == "possible" else f"You are holding the {held_name} and looking at it."
             elif looking_at_avatar:
-                state = f"You are holding the {held_name} and may be looking at the avatar." if attention_confidence == "possible" else f"You are holding the {held_name} and looking at the avatar."
+                state = f"You are holding the {held_name} and may be looking at me." if attention_confidence == "possible" else f"You are holding the {held_name} and looking at me."
             elif other_attention:
                 state = f"You are holding the {held_name} and may be looking at the {spoken_object_name(attention)}." if attention_confidence == "possible" else f"You are holding the {held_name} and looking at the {spoken_object_name(attention)}."
             else:
@@ -1190,7 +1191,7 @@ def build_current_turn_grounded_reply(
             if tone_name == "warm":
                 state = "You may be looking at me. I'm here with you." if attention_confidence == "possible" else "You're looking at me. I'm here with you."
             elif tone_name == "cold":
-                state = "You may be looking at the avatar." if attention_confidence == "possible" else "You are looking at the avatar."
+                state = "You may be looking at me." if attention_confidence == "possible" else "You are looking at me."
             else:
                 state = "You may be looking at me." if attention_confidence == "possible" else "You're looking at me."
             return f"{state} The current task is marked complete." if status == "completed" else state
@@ -1259,6 +1260,21 @@ def is_short_grounding_turn(user_text: str) -> bool:
         "where am i looking", "what do you see me looking at",
         "what am i holding", "what do i have in my hand",
     }
+
+
+def normalize_avatar_self_reference(reply: str) -> str:
+    """Keep the embodied agent's participant-facing self-reference first-person."""
+    normalized = reply or ""
+    replacements = (
+        (r"\blooking at the avatar\b", "looking at me"),
+        (r"\blooking toward the avatar\b", "looking toward me"),
+        (r"\bfacing the avatar\b", "facing me"),
+        (r"\bfocused on the avatar\b", "focused on me"),
+        (r"\battention (?:is|may be) on the avatar\b", "attention is on me"),
+    )
+    for pattern, replacement in replacements:
+        normalized = re.sub(pattern, replacement, normalized, flags=re.IGNORECASE)
+    return normalized
 
 
 def sanitize_reply_against_current_held(reply: str, scene_context: str = "") -> str:
@@ -2408,6 +2424,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 llm_seconds = time.time() - llm_start_at if "llm_start_at" in locals() else 0.0
 
             reply = sanitize_reply_against_current_held(reply, scene_context)
+            reply = normalize_avatar_self_reference(reply)
             append_conversation_log(user_text, reply, CURRENT_MODE, client_metadata, scene_context)
             remember_conversation_turn(client_metadata, user_text, reply)
             log(f"Reply: {reply}")

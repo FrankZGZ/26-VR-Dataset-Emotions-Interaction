@@ -2,11 +2,14 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.XR;
+using UnityEngine.XR.OpenXR;
 
 /// <summary>
 /// Recalibrates every immersive scene from the current tracked headset pose so
-/// the virtual eye/floor relationship is consistent without changing the
-/// horizontal spawn, yaw, or any scene object.
+/// the virtual eye/floor relationship is consistent. Runtime recenter events
+/// additionally put the tracked head back at the authored horizontal spawn and
+/// align the participant's current look direction with the authored forward.
 /// </summary>
 public class ParticipantRigHeightCalibrator : MonoBehaviour
 {
@@ -26,6 +29,22 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
     public float groundRayDistance = 5f;
 
     private Coroutine calibrationRoutine;
+    private OVRDisplay subscribedDisplay;
+    private readonly List<XRInputSubsystem> subscribedInputSubsystems = new List<XRInputSubsystem>();
+    private readonly List<XRInputSubsystem> discoveredInputSubsystems = new List<XRInputSubsystem>();
+    private bool openXrRecenteringEnabled;
+    private Vector3 authoredRigPosition;
+    private float authoredRigYaw;
+    private bool authoredPoseCaptured;
+    private Coroutine sceneRecenterRoutine;
+    private float lastSceneRecenterRequestTime = float.NegativeInfinity;
+
+    private void Awake()
+    {
+        // This component is installed immediately after the scene loads, before
+        // participant height calibration moves the rig vertically.
+        CaptureAuthoredRigPose();
+    }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void RegisterSceneInstaller()
@@ -65,26 +84,206 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
     private void OnEnable()
     {
         SceneManager.sceneLoaded += OnSceneLoaded;
+        TrySubscribeToRuntimeRecenter();
+        TryEnableAndSubscribeOpenXRRecentering();
     }
 
     private void Start()
     {
+        TrySubscribeToRuntimeRecenter();
+        TryEnableAndSubscribeOpenXRRecentering();
         RequestCalibration(SceneManager.GetActiveScene());
+    }
+
+    private void Update()
+    {
+        // OVRManager.display can be created after this component is enabled.
+        if (subscribedDisplay == null)
+        {
+            TrySubscribeToRuntimeRecenter();
+        }
+        if (!openXrRecenteringEnabled || subscribedInputSubsystems.Count == 0)
+        {
+            TryEnableAndSubscribeOpenXRRecentering();
+        }
     }
 
     private void OnDisable()
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
+        if (subscribedDisplay != null)
+        {
+            subscribedDisplay.RecenteredPose -= OnRuntimeRecenteredPose;
+            subscribedDisplay = null;
+        }
+        foreach (XRInputSubsystem subsystem in subscribedInputSubsystems)
+        {
+            if (subsystem != null)
+            {
+                subsystem.trackingOriginUpdated -= OnOpenXRTrackingOriginUpdated;
+            }
+        }
+        subscribedInputSubsystems.Clear();
         if (calibrationRoutine != null)
         {
             StopCoroutine(calibrationRoutine);
             calibrationRoutine = null;
+        }
+        if (sceneRecenterRoutine != null)
+        {
+            StopCoroutine(sceneRecenterRoutine);
+            sceneRecenterRoutine = null;
         }
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
         RequestCalibration(scene);
+    }
+
+    private void TrySubscribeToRuntimeRecenter()
+    {
+        OVRDisplay display = OVRManager.display;
+        if (display == null || display == subscribedDisplay)
+        {
+            return;
+        }
+
+        if (subscribedDisplay != null)
+        {
+            subscribedDisplay.RecenteredPose -= OnRuntimeRecenteredPose;
+        }
+
+        subscribedDisplay = display;
+        subscribedDisplay.RecenteredPose += OnRuntimeRecenteredPose;
+        Debug.Log("[VRME] Oculus long-press recenter synchronization enabled.");
+    }
+
+    private void OnRuntimeRecenteredPose()
+    {
+        Debug.Log("[VRME] Oculus runtime recentered the headset; aligning the current scene to the new pose.");
+        RequestSceneRecenter("OVRDisplay");
+    }
+
+    private void TryEnableAndSubscribeOpenXRRecentering()
+    {
+        if (!openXrRecenteringEnabled)
+        {
+            try
+            {
+                OpenXRSettings.SetAllowRecentering(true, targetEyeHeight);
+                openXrRecenteringEnabled = OpenXRSettings.AllowRecentering;
+                Debug.Log("[VRME] OpenXR Oculus-button recentering enabled=" + openXrRecenteringEnabled +
+                    ", floorOffset=" + OpenXRSettings.FloorOffset.ToString("0.00") + "m.");
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogWarning("[VRME] Could not enable OpenXR recentering yet: " + exception.Message);
+            }
+        }
+
+        discoveredInputSubsystems.Clear();
+        SubsystemManager.GetSubsystems(discoveredInputSubsystems);
+        foreach (XRInputSubsystem subsystem in discoveredInputSubsystems)
+        {
+            if (subsystem == null || subscribedInputSubsystems.Contains(subsystem))
+            {
+                continue;
+            }
+
+            subsystem.trackingOriginUpdated += OnOpenXRTrackingOriginUpdated;
+            subscribedInputSubsystems.Add(subsystem);
+            Debug.Log("[VRME] Listening for OpenXR tracking-origin recenter events from " + subsystem.subsystemDescriptor.id + ".");
+        }
+    }
+
+    private void OnOpenXRTrackingOriginUpdated(XRInputSubsystem subsystem)
+    {
+        Debug.Log("[VRME] OpenXR tracking origin updated after Oculus-button recenter; aligning current scene.");
+        RequestSceneRecenter("OpenXR");
+    }
+
+    private void CaptureAuthoredRigPose()
+    {
+        if (authoredPoseCaptured)
+        {
+            return;
+        }
+
+        authoredRigPosition = transform.position;
+        authoredRigYaw = transform.eulerAngles.y;
+        authoredPoseCaptured = true;
+    }
+
+    private void RequestSceneRecenter(string source)
+    {
+        if (!isActiveAndEnabled)
+        {
+            return;
+        }
+
+        // Meta's OVRDisplay and OpenXR callbacks can describe the same button
+        // recenter. Apply it once so the second callback cannot move the rig again.
+        if (Time.unscaledTime - lastSceneRecenterRequestTime < 0.35f)
+        {
+            return;
+        }
+
+        lastSceneRecenterRequestTime = Time.unscaledTime;
+        if (sceneRecenterRoutine != null)
+        {
+            StopCoroutine(sceneRecenterRoutine);
+        }
+        sceneRecenterRoutine = StartCoroutine(ApplySceneRecenter(source));
+    }
+
+    private IEnumerator ApplySceneRecenter(string source)
+    {
+        CaptureAuthoredRigPose();
+
+        // Let OpenXR finish updating the tracking origin before reading the
+        // CenterEyeAnchor. Reading it inside the callback gives the old pose.
+        yield return null;
+        yield return new WaitForEndOfFrame();
+
+        if (centerEyeAnchor == null)
+        {
+            OVRCameraRig rig = GetComponent<OVRCameraRig>();
+            centerEyeAnchor = rig != null ? rig.centerEyeAnchor : transform.Find("TrackingSpace/CenterEyeAnchor");
+        }
+
+        if (centerEyeAnchor == null)
+        {
+            Debug.LogWarning("[VRME] Scene recenter skipped: CenterEyeAnchor not found.");
+            sceneRecenterRoutine = null;
+            yield break;
+        }
+
+        Vector3 horizontalForward = Vector3.ProjectOnPlane(centerEyeAnchor.forward, Vector3.up);
+        if (horizontalForward.sqrMagnitude > 0.0001f)
+        {
+            float trackedHeadYaw = Quaternion.LookRotation(horizontalForward.normalized, Vector3.up).eulerAngles.y;
+            float yawCorrection = Mathf.DeltaAngle(trackedHeadYaw, authoredRigYaw);
+            transform.RotateAround(centerEyeAnchor.position, Vector3.up, yawCorrection);
+        }
+
+        // Re-read the head after rotating around it, then put it exactly at the
+        // scene's authored X/Z start. Height remains the calibrator's concern.
+        Vector3 headPosition = centerEyeAnchor.position;
+        transform.position += new Vector3(
+            authoredRigPosition.x - headPosition.x,
+            0f,
+            authoredRigPosition.z - headPosition.z);
+
+        Debug.Log("[VRME] Scene recentered from " + source +
+            ". headXZ=(" + centerEyeAnchor.position.x.ToString("0.00") + "," +
+            centerEyeAnchor.position.z.ToString("0.00") + "), targetXZ=(" +
+            authoredRigPosition.x.ToString("0.00") + "," + authoredRigPosition.z.ToString("0.00") +
+            "), headYaw=" + centerEyeAnchor.eulerAngles.y.ToString("0.0") +
+            ", targetYaw=" + authoredRigYaw.ToString("0.0") + ".");
+
+        sceneRecenterRoutine = null;
+        RequestCalibration(SceneManager.GetActiveScene());
     }
 
     private void RequestCalibration(Scene scene)

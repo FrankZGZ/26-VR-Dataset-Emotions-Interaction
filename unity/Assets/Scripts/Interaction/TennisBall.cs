@@ -50,6 +50,7 @@ public class TennisBall : MonoBehaviour
     private Vector3 spawnPosition;
     private Quaternion spawnRotation;
     private float nextContainmentLogAt;
+    private float kinematicWithoutSelectionStartedAt = float.NegativeInfinity;
     private const float UserContactThrowWindowSeconds = 2.5f;
     private const float ActiveControllerContactGraceSeconds = 0.2f;
 
@@ -127,7 +128,7 @@ public class TennisBall : MonoBehaviour
 
         SnapAboveGroundIfNeeded(force: false);
 
-        bool currentlyHeldByUser = selectedByUser;
+        bool currentlyHeldByUser = selectedByUser || IsActivelySelectedByUser();
         if (interactionTracker != null)
         {
             interactionTracker.RefreshCurrentHeldState();
@@ -145,6 +146,29 @@ public class TennisBall : MonoBehaviour
         // so recovery/containment cannot pull the ball out of the hand.
         bool activeControllerContact = Time.time - lastUserHandContactAt <= ActiveControllerContactGraceSeconds;
         currentlyHeldByUser = currentlyHeldByUser || activeControllerContact;
+
+        // Meta temporarily makes the body kinematic while selected. If an
+        // interrupted selector fails to send Unselect, clear that stale lock
+        // once no interactor or controller contact has owned the ball for a
+        // short grace period.
+        if (rb.isKinematic && !currentlyHeldByUser)
+        {
+            if (float.IsNegativeInfinity(kinematicWithoutSelectionStartedAt))
+            {
+                kinematicWithoutSelectionStartedAt = Time.time;
+            }
+            else if (Time.time - kinematicWithoutSelectionStartedAt >= 0.5f)
+            {
+                rb.isKinematic = false;
+                rb.WakeUp();
+                kinematicWithoutSelectionStartedAt = float.NegativeInfinity;
+                Debug.LogWarning("[TennisBall] Cleared stale kinematic lock; ball is interactive again.");
+            }
+        }
+        else
+        {
+            kinematicWithoutSelectionStartedAt = float.NegativeInfinity;
+        }
 
         if (!armedForUserThrow && !hasBeenThrown &&
             Time.time - lastUserHandContactAt <= UserContactThrowWindowSeconds)
@@ -262,6 +286,7 @@ public class TennisBall : MonoBehaviour
     public void BeginDogCarry()
     {
         isCarriedByDog = true;
+        kinematicWithoutSelectionStartedAt = float.NegativeInfinity;
         armedForUserThrow = false;
         selectedByUser = false;
         lastUserHandContactAt = float.NegativeInfinity;

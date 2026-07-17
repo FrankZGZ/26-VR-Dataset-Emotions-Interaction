@@ -155,7 +155,7 @@ ELEVENLABS_TONE_PRESETS = {
             "- If the user looks at the cup but the task target is elsewhere: "
             "'The cup is not the current target. Use the highlighted object with the highlighted mark.'\n"
             "- If the user looks at the avatar: "
-            "'You are facing the avatar. The task remains the highlighted object and target.'"
+            "'You are looking at me. The task remains the highlighted object and target.'"
         ),
     },
     "submissive": {

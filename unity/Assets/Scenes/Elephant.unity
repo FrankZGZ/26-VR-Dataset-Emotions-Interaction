@@ -3434,6 +3434,8 @@ MonoBehaviour:
   createLikertPageAtRuntime: 1
   autoEnableTaskRaysOnSurveyStart: 1
   allowControllerButtonSubmit: 1
+  positionQuestionnaireInFrontOfCamera: 0
+  samNextButtonPosition: {x: 350, y: -500}
   likertRoot: {fileID: 0}
   likertPanelSize: {x: 980, y: 720}
   likertStartPosition: {x: 52, y: -78}
@@ -19842,7 +19844,7 @@ Transform:
   m_GameObject: {fileID: 951519734}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 5.49, y: 1.966, z: 7.81}
+  m_LocalPosition: {x: 0.31, y: 1.966, z: 3.63}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:

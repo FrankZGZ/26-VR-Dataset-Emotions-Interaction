@@ -43,6 +43,10 @@ public sealed class TunnelStartupRaySuppressor : MonoBehaviour
         {
             SuppressNow();
             yield return null;
+            if (IsSurveyVisible())
+            {
+                break;
+            }
             SuppressNow();
             yield return new WaitForEndOfFrame();
         }
@@ -140,7 +144,27 @@ public sealed class TunnelStartupRaySuppressor : MonoBehaviour
 
     private static bool IsLoadedSceneObject(GameObject obj)
     {
-        return obj != null && obj.scene.IsValid() && obj.scene.isLoaded;
+        return obj != null &&
+               obj.scene.IsValid() &&
+               obj.scene.isLoaded &&
+               !IsQuestionnaireTaskRay(obj.transform);
+    }
+
+    private static bool IsQuestionnaireTaskRay(Transform transformToCheck)
+    {
+        Transform current = transformToCheck;
+        while (current != null)
+        {
+            if (string.Equals(current.name, "LeftXRTaskRay", System.StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(current.name, "RightXRTaskRay", System.StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            current = current.parent;
+        }
+
+        return false;
     }
 
     private static bool IsRayVisualHierarchy(Transform transformToCheck)

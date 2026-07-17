@@ -1236,10 +1236,10 @@ public class CameraPoseSender : MonoBehaviour
 
     private Transform ResolveHeadTransform()
     {
-        GameObject centerEyeAnchor = GameObject.Find("OVRCameraRig/TrackingSpace/CenterEyeAnchor");
-        if (centerEyeAnchor != null && centerEyeAnchor.activeInHierarchy)
+        OVRCameraRig ovrRig = ResolveActiveOVRCameraRig();
+        if (ovrRig != null && ovrRig.centerEyeAnchor != null && ovrRig.centerEyeAnchor.gameObject.activeInHierarchy)
         {
-            return centerEyeAnchor.transform;
+            return ovrRig.centerEyeAnchor;
         }
 
         if (cameraRig != null)
@@ -1259,17 +1259,45 @@ public class CameraPoseSender : MonoBehaviour
 
     private Transform ResolveTrackingSpaceTransform()
     {
+        OVRCameraRig ovrRig = ResolveActiveOVRCameraRig();
+        if (ovrRig != null && ovrRig.trackingSpace != null)
+        {
+            return ovrRig.trackingSpace;
+        }
+
+        return null;
+    }
+
+    private OVRCameraRig ResolveActiveOVRCameraRig()
+    {
+        // Existing scenes serialize cameraRig as CenterEyeAnchor rather than as
+        // the OVRCameraRig root. Walk upward first; name-based GameObject.Find
+        // fails in scenes whose rig root is named "Camera Rig".
         if (cameraRig != null)
         {
-            Transform trackingSpace = cameraRig.transform.Find("TrackingSpace");
-            if (trackingSpace != null)
+            OVRCameraRig parentRig = cameraRig.GetComponentInParent<OVRCameraRig>(true);
+            if (parentRig != null && parentRig.gameObject.activeInHierarchy)
             {
-                return trackingSpace;
+                return parentRig;
+            }
+
+            OVRCameraRig childRig = cameraRig.GetComponentInChildren<OVRCameraRig>(true);
+            if (childRig != null && childRig.gameObject.activeInHierarchy)
+            {
+                return childRig;
             }
         }
 
-        GameObject trackingSpaceObject = GameObject.Find("OVRCameraRig/TrackingSpace");
-        return trackingSpaceObject != null ? trackingSpaceObject.transform : null;
+        OVRCameraRig[] rigs = FindObjectsByType<OVRCameraRig>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        foreach (OVRCameraRig rig in rigs)
+        {
+            if (rig != null && rig.isActiveAndEnabled)
+            {
+                return rig;
+            }
+        }
+
+        return null;
     }
 
     private InteractionTracker RaycastInteractionTracker(Ray gazeRay, out RaycastHit bestHit)
