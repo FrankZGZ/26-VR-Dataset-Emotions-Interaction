@@ -30,6 +30,10 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
     public float defaultAvatarEyeHeight = 1.62f;
     public float minimumMatchedEyeHeight = 1.62f;
     public float maximumMatchedEyeHeight = 1.62f;
+    [Tooltip("Visible sole-to-head height shared by every conversational avatar.")]
+    public float targetAvatarVisualHeight = 1.62f;
+    [Tooltip("Rocketbox eye line sits approximately this far below the top of the head.")]
+    public float eyeToHeadTopOffset = 0.13f;
     public float minimumAvatarScale = 0.85f;
     public float maximumAvatarScale = 1.22f;
 
@@ -150,14 +154,16 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
         }
 
         float participantEyeHeight = Mathf.Max(0f, participantHead.position.y - authoredRootY);
-        // Avatar stature is an experimental constant. Do not rescale it from a
-        // transient or incorrectly recentered headset pose.
-        float targetEyeHeight = 1.62f;
+        // 1.62 m is the requested full visible stature, not the avatar eye
+        // line. The previous 1.62 m eye target made the top of the head roughly
+        // 1.75 m and therefore visibly taller than the participant.
+        float targetEyeHeight = Mathf.Max(1f, targetAvatarVisualHeight - eyeToHeadTopOffset);
         float scaleFactor = Mathf.Clamp(targetEyeHeight / currentEyeHeight, minimumAvatarScale, maximumAvatarScale);
         transform.localScale = transform.localScale * scaleFactor;
         bodyHeight *= scaleFactor;
-        Debug.Log("[VRME] Avatar eye height normalized. currentEyeHeight=" + currentEyeHeight.ToString("0.00") +
+        Debug.Log("[VRME] Avatar visible height normalized. currentEyeHeight=" + currentEyeHeight.ToString("0.00") +
             ", participantEyeHeight=" + participantEyeHeight.ToString("0.00") +
+            ", targetVisualHeight=" + targetAvatarVisualHeight.ToString("0.00") +
             ", targetEyeHeight=" + targetEyeHeight.ToString("0.00") +
             ", scaleFactor=" + scaleFactor.ToString("0.00"));
     }

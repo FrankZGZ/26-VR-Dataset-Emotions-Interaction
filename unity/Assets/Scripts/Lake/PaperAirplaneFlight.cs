@@ -102,6 +102,13 @@ public class PaperAirplaneFlight : MonoBehaviour
 
     private void OnCollisionEnter(Collision collision)
     {
+        // The plane often overlaps the hand/controller for one or two frames
+        // after release. That contact must not cancel an otherwise valid throw.
+        if (collision != null && IsParticipantRigCollider(collision.transform))
+        {
+            return;
+        }
+
         // Check for splash object specifically
         if (isFlying && collision.gameObject == splashObject)
         {
@@ -161,5 +168,31 @@ public class PaperAirplaneFlight : MonoBehaviour
                 }
             }
         }
+    }
+
+    private static bool IsParticipantRigCollider(Transform collisionTransform)
+    {
+        for (Transform current = collisionTransform; current != null; current = current.parent)
+        {
+            string objectName = current.name;
+            if (objectName.IndexOf("ControllerGrabLocation", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                objectName.IndexOf("CenterEyeAnchor", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                objectName.IndexOf("Camera Offset", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                objectName.IndexOf("OVRCameraRig", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                objectName.IndexOf("Camera Rig", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public void ResetForRespawn()
+    {
+        isFlying = false;
+        isFallingInWater = false;
+        resetTimer = 0f;
+        EnsureTrailsOff();
     }
 }

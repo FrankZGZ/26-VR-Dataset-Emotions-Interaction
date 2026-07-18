@@ -11,6 +11,10 @@ public class AvatarGroundAligner : MonoBehaviour
     [Range(0.1f, 4f)] public float rayStartAboveFeet = 2.5f;
     [Range(1f, 10f)] public float rayDistance = 6f;
     [Range(0.01f, 2f)] public float maximumCorrection = 1.25f;
+    [Tooltip("Reject animation-driven foot bones that drift implausibly far from the authored root.")]
+    [Range(0.1f, 1f)] public float maximumSoleOffsetFromRoot = 0.35f;
+    [Tooltip("Small negative value seats the shoe sole into the floor and removes visible hovering.")]
+    [Range(-0.1f, 0.05f)] public float groundContactOffset = -0.02f;
 
     private IEnumerator Start()
     {
@@ -81,10 +85,20 @@ public class AvatarGroundAligner : MonoBehaviour
 
         float measuredSoleY;
         bool usedHumanoidFeet = TryResolveHumanoidSoleY(out measuredSoleY);
+        if (usedHumanoidFeet && Mathf.Abs(measuredSoleY - transform.position.y) > maximumSoleOffsetFromRoot)
+        {
+            Debug.LogWarning("[VRME] Ignoring animation-displaced foot bones. soleY=" +
+                measuredSoleY.ToString("0.000") + ", rootY=" + transform.position.y.ToString("0.000"));
+            usedHumanoidFeet = false;
+        }
         if (!usedHumanoidFeet)
-            measuredSoleY = avatarBounds.min.y;
+        {
+            measuredSoleY = Mathf.Abs(avatarBounds.min.y - transform.position.y) <= maximumSoleOffsetFromRoot
+                ? avatarBounds.min.y
+                : transform.position.y;
+        }
 
-        float correction = bestGroundY - measuredSoleY;
+        float correction = (bestGroundY + groundContactOffset) - measuredSoleY;
         if (Mathf.Abs(correction) > maximumCorrection)
         {
             Debug.LogWarning("[VRME] Avatar ground alignment rejected excessive correction: " + correction);
