@@ -968,12 +968,14 @@ public class VrmeAtticClient : MonoBehaviour
             case "attic":
                 return new SceneTaskHighlightSpec(
                     new[] { "Shield", "Shield01" },
-                    new[] { "Target", "Position" },
+                    Array.Empty<string>(),
                     "Safe position",
                     GuidedTaskCompletionMode.PlayerAndObjectNearTarget,
                     TaskMarkerPlacement.Ground,
                     0.85f,
-                    1.1f);
+                    1.1f,
+                    true,
+                    2.5f);
             default:
                 return null;
         }

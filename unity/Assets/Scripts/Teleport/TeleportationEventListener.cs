@@ -31,11 +31,30 @@ public class TeleportationEventListener : MonoBehaviour
 
     private void Awake()
     {
+        // Every immersive scene already stores an authored, unobstructed survey
+        // viewpoint. Restore that original flow so entering Exit never leaves
+        // the participant at a doorway with the door between them and SAM.
+        if (ShouldUseAuthoredSurveyViewpoint(SceneManager.GetActiveScene().name))
+        {
+            repositionRigForSurvey = true;
+        }
+
         if (hideQuestionnaireOnStart)
         {
             HideQuestionnaireOnSceneEntry();
             StartCoroutine(HideQuestionnaireStartupObjectsForOpeningFrames());
         }
+    }
+
+    private static bool ShouldUseAuthoredSurveyViewpoint(string sceneName)
+    {
+        return string.Equals(sceneName, "Tutorial_Interaction", System.StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(sceneName, "Lake", System.StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(sceneName, "Attic", System.StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(sceneName, "Puppies", System.StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(sceneName, "SolitaryConfinement", System.StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(sceneName, "Tunnel", System.StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(sceneName, "Elephant", System.StringComparison.OrdinalIgnoreCase);
     }
 
     private void Start()
