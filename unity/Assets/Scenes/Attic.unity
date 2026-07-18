@@ -2470,7 +2470,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   realSceneBuildIndex: 7
   endSceneBuildIndex: 8
-  realSceneWaitTime: 10
+  realSceneWaitTime: 60
 --- !u!4 &57292143
 Transform:
   m_ObjectHideFlags: 0
@@ -3143,7 +3143,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rayInteractor: {fileID: 75470712}
-  logUiHits: 0
 --- !u!114 &75470710
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -9782,8 +9781,8 @@ MonoBehaviour:
   hideQuestionnaireOnStart: 1
   enableKeyboardExitTrigger: 1
   keyboardExitTriggerKey: 101
-  repositionRigForSurvey: 1
-  applyLegacySceneResetAfterSurvey: 1
+  repositionRigForSurvey: 0
+  applyLegacySceneResetAfterSurvey: 0
 --- !u!65 &240469364
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -12602,7 +12601,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rayInteractor: {fileID: 279612695}
-  logUiHits: 0
 --- !u!114 &279612693
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -21055,7 +21053,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 07524b858ed4b1e418381f03f48d4d41, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  countdownTimerSeconds: 60
+  countdownTimerSeconds: 30
   doorObject: {fileID: 1973309251}
   skipSurvey: 0
   requiredInteractables: []
@@ -21102,8 +21100,8 @@ MonoBehaviour:
   gazeVoiceMinimumDwellSeconds: 0.3
   gazeAvatarObjectNameHints: Rocketbox,ReadyPlayerMe,DigitalHuman,SocialAgent,CompanionAvatar
   autoAttachAvatarGazeTargets: 1
-  forceHideGazeDebugVisuals: 0
-  forceShowGazeDebugVisuals: 1
+  forceHideGazeDebugVisuals: 1
+  forceShowGazeDebugVisuals: 0
   disableHandTrackingObjects: 1
   handTrackingObjectNameHints: OVRHandDataSource,OVRLeftHandVisual,OVRRightHandVisual,OpenXRLeftHand,OpenXRRightHand,HandRayInteractor,HandRay,ControllerRay,ControllerRayInteractor,RayInteractor,OVRHands,UnityXRHands
   sampleOnlyWhileVoiceRecording: 0
@@ -21111,7 +21109,7 @@ MonoBehaviour:
   logRuntimeTrackingState: 1
   writeLiveDebugSnapshot: 1
   runtimeDebugIntervalSeconds: 5
-  showGazeDebugMarker: 1
+  showGazeDebugMarker: 0
   showGazeDebugRay: 0
   showGazeDebugOnlyWhileVoiceSampling: 0
   gazeDebugMarkerSize: 0.12
@@ -27334,6 +27332,69 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 4004965118951458, guid: ffa4d200e6c7d9c4b90b3764b7ed86d4, type: 3}
   m_PrefabInstance: {fileID: 688048226}
   m_PrefabAsset: {fileID: 0}
+--- !u!1001 &688786304
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1603518291700351669, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: scenePrompt
+      value: You are in a furnished attic facing a shouting man with a gun, creating
+        a tense and threatening atmosphere. The participant can raise a shield to
+        protect themselves.
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -1.04
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: -1.25
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: -0.937343
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0.34840813
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7030998814401213132, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_Name
+      value: VRME_Rocketbox_Female_Adult_01
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
 --- !u!1001 &693072886
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -40612,7 +40673,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &1037848315
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -56642,69 +56703,6 @@ Transform:
   - {fileID: 337454245}
   m_Father: {fileID: 918664891}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1001 &1507604417
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: 1603518291700351669, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: scenePrompt
-      value: You are in a furnished attic facing a shouting man with a gun, creating
-        a tense and threatening atmosphere. The participant can raise a shield to
-        protect themselves.
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: -1.04
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: -1.25
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: -0.937343
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: -0.34840813
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7030998814401213132, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_Name
-      value: VRME_Rocketbox_Female_Adult_01
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
 --- !u!1 &1508535988
 GameObject:
   m_ObjectHideFlags: 0
@@ -58102,8 +58100,8 @@ MonoBehaviour:
   isInsightPassthroughEnabled: 0
   shouldBoundaryVisibilityBeSuppressed: 0
   requestBodyTrackingPermissionOnStartup: 0
-  requestFaceTrackingPermissionOnStartup: 1
-  requestEyeTrackingPermissionOnStartup: 1
+  requestFaceTrackingPermissionOnStartup: 0
+  requestEyeTrackingPermissionOnStartup: 0
   requestScenePermissionOnStartup: 1
   requestRecordAudioPermissionOnStartup: 0
   _localDimming: 1
@@ -59445,6 +59443,8 @@ MonoBehaviour:
   createLikertPageAtRuntime: 1
   autoEnableTaskRaysOnSurveyStart: 1
   allowControllerButtonSubmit: 1
+  positionQuestionnaireInFrontOfCamera: 0
+  samNextButtonPosition: {x: 350, y: -500}
   likertRoot: {fileID: 0}
   likertPanelSize: {x: 980, y: 720}
   likertStartPosition: {x: 52, y: -78}
@@ -72167,7 +72167,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &1883517743
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -77852,10 +77852,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1ee65a76ff79c8f479f48c370bf9275a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  startWalkingTime: 30
+  startWalkingTime: 20
   man: {fileID: 118544362}
   manCreaming: {fileID: 259126476}
-  manCreamingTime: 36
+  manCreamingTime: 26
 --- !u!1001 &2020567231
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -85298,4 +85298,4 @@ SceneRoots:
   - {fileID: 1493304572}
   - {fileID: 2140290462}
   - {fileID: 1727890440}
-  - {fileID: 1507604417}
+  - {fileID: 688786304}

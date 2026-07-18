@@ -7,7 +7,6 @@ using TMPro; // Add TMPro namespace for TMP_InputField support
 public class UIRayDebugHelper : MonoBehaviour
 {
     public XRRayInteractor rayInteractor;
-    public bool logUiHits = false;
 
     void Update()
     {
@@ -15,10 +14,7 @@ public class UIRayDebugHelper : MonoBehaviour
 
         if (rayInteractor.TryGetCurrentUIRaycastResult(out RaycastResult result))
         {
-            if (logUiHits)
-            {
-                Debug.Log("[UI Hit] Name: " + result.gameObject.name);
-            }
+            Debug.Log("[UI Hit] Name: " + result.gameObject.name);
 
             if (OVRInput.GetDown(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.RTouch) ||
                 OVRInput.GetDown(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.LTouch))

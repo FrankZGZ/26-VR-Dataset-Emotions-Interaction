@@ -2312,7 +2312,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &107042747
 Transform:
   m_ObjectHideFlags: 0
@@ -2511,7 +2511,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &108114429
 Transform:
   m_ObjectHideFlags: 0
@@ -4892,7 +4892,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rayInteractor: {fileID: 215472579}
-  logUiHits: 0
 --- !u!114 &215472577
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5051,7 +5050,7 @@ LineRenderer:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 215472574}
-  m_Enabled: 0
+  m_Enabled: 1
   m_CastShadows: 0
   m_ReceiveShadows: 0
   m_DynamicOccludee: 1
@@ -5630,7 +5629,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &221306732
 Transform:
   m_ObjectHideFlags: 0
@@ -5847,7 +5846,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   realSceneBuildIndex: 7
   endSceneBuildIndex: 0
-  realSceneWaitTime: 10
+  realSceneWaitTime: 60
 --- !u!4 &225417119
 Transform:
   m_ObjectHideFlags: 0
@@ -8301,6 +8300,68 @@ SkinnedMeshRenderer:
     m_Center: {x: -0.009029879, y: -0.064930744, z: -0.06743039}
     m_Extent: {x: 0.0043483684, y: 0.0068749115, z: 0.006839171}
   m_DirtyAABB: 0
+--- !u!1001 &344027111
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1603518291700351669, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: scenePrompt
+      value: You are in a dark, confined tunnel. The participant can use a flashlight
+        to explore the darkness and feel more in control.
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -1.69
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0.16
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7030998814401213132, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_Name
+      value: VRME_Rocketbox_Female_Adult_01
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
 --- !u!1 &345370747
 GameObject:
   m_ObjectHideFlags: 0
@@ -11563,7 +11624,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 07524b858ed4b1e418381f03f48d4d41, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  countdownTimerSeconds: 60
+  countdownTimerSeconds: 30
   doorObject: {fileID: 1452613708}
   skipSurvey: 0
   requiredInteractables: []
@@ -11610,8 +11671,8 @@ MonoBehaviour:
   gazeVoiceMinimumDwellSeconds: 0.3
   gazeAvatarObjectNameHints: Rocketbox,ReadyPlayerMe,DigitalHuman,SocialAgent,CompanionAvatar
   autoAttachAvatarGazeTargets: 1
-  forceHideGazeDebugVisuals: 0
-  forceShowGazeDebugVisuals: 1
+  forceHideGazeDebugVisuals: 1
+  forceShowGazeDebugVisuals: 0
   disableHandTrackingObjects: 1
   handTrackingObjectNameHints: OVRHandDataSource,OVRLeftHandVisual,OVRRightHandVisual,OpenXRLeftHand,OpenXRRightHand,HandRayInteractor,HandRay,ControllerRay,ControllerRayInteractor,RayInteractor,OVRHands,UnityXRHands
   sampleOnlyWhileVoiceRecording: 0
@@ -11619,7 +11680,7 @@ MonoBehaviour:
   logRuntimeTrackingState: 1
   writeLiveDebugSnapshot: 1
   runtimeDebugIntervalSeconds: 5
-  showGazeDebugMarker: 1
+  showGazeDebugMarker: 0
   showGazeDebugRay: 0
   showGazeDebugOnlyWhileVoiceSampling: 0
   gazeDebugMarkerSize: 0.12
@@ -11766,7 +11827,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &486072224
 Transform:
   m_ObjectHideFlags: 0
@@ -13464,7 +13525,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &539962769
 Transform:
   m_ObjectHideFlags: 0
@@ -15960,7 +16021,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rayInteractor: {fileID: 656576859}
-  logUiHits: 0
 --- !u!114 &656576857
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -16119,7 +16179,7 @@ LineRenderer:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 656576854}
-  m_Enabled: 0
+  m_Enabled: 1
   m_CastShadows: 0
   m_ReceiveShadows: 0
   m_DynamicOccludee: 1
@@ -16749,8 +16809,8 @@ MonoBehaviour:
   hideQuestionnaireOnStart: 1
   enableKeyboardExitTrigger: 1
   keyboardExitTriggerKey: 101
-  repositionRigForSurvey: 1
-  applyLegacySceneResetAfterSurvey: 1
+  repositionRigForSurvey: 0
+  applyLegacySceneResetAfterSurvey: 0
 --- !u!65 &667973643
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -17779,7 +17839,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &709561858
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -19459,7 +19519,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &794131193
 Transform:
   m_ObjectHideFlags: 0
@@ -21607,8 +21667,8 @@ MonoBehaviour:
   isInsightPassthroughEnabled: 0
   shouldBoundaryVisibilityBeSuppressed: 0
   requestBodyTrackingPermissionOnStartup: 0
-  requestFaceTrackingPermissionOnStartup: 1
-  requestEyeTrackingPermissionOnStartup: 1
+  requestFaceTrackingPermissionOnStartup: 0
+  requestEyeTrackingPermissionOnStartup: 0
   requestScenePermissionOnStartup: 0
   requestRecordAudioPermissionOnStartup: 0
   _localDimming: 1
@@ -21932,7 +21992,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &896102522
 Transform:
   m_ObjectHideFlags: 0
@@ -23625,7 +23685,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &967150368
 Transform:
   m_ObjectHideFlags: 0
@@ -23754,7 +23814,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &972730740
 Transform:
   m_ObjectHideFlags: 0
@@ -25911,7 +25971,7 @@ LineRenderer:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1027844116}
-  m_Enabled: 0
+  m_Enabled: 1
   m_CastShadows: 0
   m_ReceiveShadows: 0
   m_DynamicOccludee: 1
@@ -32250,7 +32310,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1233006781
 Transform:
   m_ObjectHideFlags: 0
@@ -32624,7 +32684,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1253339653
 Transform:
   m_ObjectHideFlags: 0
@@ -35837,7 +35897,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1376191342
 Transform:
   m_ObjectHideFlags: 0
@@ -36464,7 +36524,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1390555309
 Transform:
   m_ObjectHideFlags: 0
@@ -37976,6 +38036,8 @@ MonoBehaviour:
   createLikertPageAtRuntime: 1
   autoEnableTaskRaysOnSurveyStart: 1
   allowControllerButtonSubmit: 1
+  positionQuestionnaireInFrontOfCamera: 0
+  samNextButtonPosition: {x: 350, y: -500}
   likertRoot: {fileID: 0}
   likertPanelSize: {x: 980, y: 720}
   likertStartPosition: {x: 52, y: -78}
@@ -38636,8 +38698,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1452613709}
   - component: {fileID: 1452613711}
-  - component: {fileID: 1452613712}
-  - component: {fileID: 1452613713}
   m_Layer: 0
   m_Name: ExitDoor
   m_TagString: Untagged
@@ -38683,57 +38743,6 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
---- !u!65 &1452613712
-BoxCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1452613708}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 1
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Size: {x: 8, y: 5, z: 8}
-  m_Center: {x: 2.5, y: 2.5, z: 0}
---- !u!114 &1452613713
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1452613708}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 531795f536e30564a9029aa81e22b49b, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  locomotionSystem: {fileID: 0}
-  player: {fileID: 1393768105}
-  sceneController: {fileID: 481075466}
-  samTask: {fileID: 1191426274}
-  leftTaskRay: {fileID: 656576854}
-  rightTaskRay: {fileID: 215472574}
-  ovrCameraRig: {fileID: 885567551}
-  teleportTargetPosition: {x: 0, y: 0, z: 0}
-  teleportTargetYRotation: 0
-  disableAfterTeleport:
-  - {fileID: 1982894379}
-  destroyAfterTeleport: []
-  refreshAfterTeleport: []
-  hideQuestionnaireOnStart: 1
-  enableKeyboardExitTrigger: 1
-  keyboardExitTriggerKey: 101
-  repositionRigForSurvey: 1
-  applyLegacySceneResetAfterSurvey: 1
 --- !u!1 &1454716669
 GameObject:
   m_ObjectHideFlags: 0
@@ -42304,7 +42313,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1601514813
 Transform:
   m_ObjectHideFlags: 0
@@ -42588,7 +42597,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1615684683
 Transform:
   m_ObjectHideFlags: 0
@@ -44061,7 +44070,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1668705370
 Transform:
   m_ObjectHideFlags: 0
@@ -46174,68 +46183,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1811450285}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1001 &1730896901
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: 1603518291700351669, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: scenePrompt
-      value: You are in a dark, confined tunnel. The participant can use a flashlight
-        to explore the darkness and feel more in control.
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: -1.69
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0.16
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7030998814401213132, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_Name
-      value: VRME_Rocketbox_Female_Adult_01
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
 --- !u!1 &1736937639
 GameObject:
   m_ObjectHideFlags: 0
@@ -47889,6 +47836,43 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2fad1ad1b9047f447ad9a2e02f078438, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  bodyPosePlayer: {fileID: 0}
+  enableReplayGrab: 1
+  grabInferenceMode: 4
+  grabDistance: 0.1
+  releaseDistance: 0.2
+  holdYawOnly: 0
+  useHysteresis: 1
+  minHoldTime: 1
+  objectGrabPoint: {fileID: 228789548}
+  snapRotationToGrabPoint: 1
+  fingerToPalmGrabDistance: 0.1
+  fingerToPalmReleaseDistance: 0.3
+  requiredCurledFingers: 3
+  leftHandJoint: -1
+  rightHandJoint: -1
+  leftThumbTipJoint: -1
+  leftIndexTipJoint: -1
+  rightThumbTipJoint: -1
+  rightIndexTipJoint: -1
+  leftPalmJoint: -1
+  rightPalmJoint: -1
+  leftMiddleTipJoint: -1
+  leftRingTipJoint: -1
+  leftPinkyTipJoint: -1
+  rightMiddleTipJoint: -1
+  rightRingTipJoint: -1
+  rightPinkyTipJoint: -1
+  useClosestPointOnColliders: 1
+  includeChildColliders: 1
+  moveWithRigidbodyInFixedUpdate: 1
+  forceKinematicWhileGrabbed: 1
+  restoreKinematicOnRelease: 1
+  debugLogs: 0
+  warnOnMissingJoints: 1
+  logGrabEvents: 1
+  logProximityEvents: 1
+  logFistGestureEvents: 1
 --- !u!1 &1808167723
 GameObject:
   m_ObjectHideFlags: 0
@@ -49238,7 +49222,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &1882066502
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -49547,7 +49531,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1893314334
 Transform:
   m_ObjectHideFlags: 0
@@ -51434,7 +51418,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1960806853
 Transform:
   m_ObjectHideFlags: 0
@@ -58175,7 +58159,6 @@ SceneRoots:
   - {fileID: 1540552395}
   - {fileID: 260100402}
   - {fileID: 424686991}
-  - {fileID: 1730896901}
   - {fileID: 2050040218}
   - {fileID: 2056999408}
   - {fileID: 481075468}
@@ -58188,3 +58171,4 @@ SceneRoots:
   - {fileID: 951211082}
   - {fileID: 1084932724}
   - {fileID: 225417119}
+  - {fileID: 344027111}

@@ -1750,7 +1750,7 @@ Transform:
   m_GameObject: {fileID: 67131400}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0.05, z: 0}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -3019,6 +3019,8 @@ MonoBehaviour:
   createLikertPageAtRuntime: 1
   autoEnableTaskRaysOnSurveyStart: 1
   allowControllerButtonSubmit: 1
+  positionQuestionnaireInFrontOfCamera: 0
+  samNextButtonPosition: {x: 350, y: -500}
   likertRoot: {fileID: 0}
   likertPanelSize: {x: 980, y: 720}
   likertStartPosition: {x: 52, y: -78}
@@ -9630,7 +9632,7 @@ Transform:
   m_GameObject: {fileID: 410354648}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.8490164, y: 0.2590048, z: -0.85305184}
+  m_LocalPosition: {x: -0.8490164, y: 0.20900479, z: -0.85305184}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -12226,8 +12228,8 @@ MonoBehaviour:
   hideQuestionnaireOnStart: 1
   enableKeyboardExitTrigger: 1
   keyboardExitTriggerKey: 101
-  repositionRigForSurvey: 1
-  applyLegacySceneResetAfterSurvey: 1
+  repositionRigForSurvey: 0
+  applyLegacySceneResetAfterSurvey: 0
 --- !u!65 &501720120
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -13201,7 +13203,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &547044870
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -14461,9 +14463,14 @@ MonoBehaviour:
   animator: {fileID: 586099923}
   cooldown: 0
   lookSpeed: 2
+  interactionTimeout: 5
   inactivityThreshold: 20
   ball: {fileID: 0}
   mouthPosition: {fileID: 0}
+  catchBallDistance: 0.9
+  returnDropDistance: 0.3
+  returnMoveSpeed: 1.5
+  fetchStartDelay: 0.35
   canFetchBall: 0
 --- !u!4 &586099931 stripped
 Transform:
@@ -16565,68 +16572,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _controller: {fileID: 1516161783}
   _offset: {x: 0, y: 0, z: 0}
---- !u!1001 &669213202
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: 1603518291700351669, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: scenePrompt
-      value: You are in a warm, familiar indoor room with playful puppies. The participant
-        can pet the puppies and play fetch with them using a ball.
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 1.5
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 180
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7030998814401213132, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_Name
-      value: VRME_Rocketbox_Female_Adult_01
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
 --- !u!1 &669405038
 GameObject:
   m_ObjectHideFlags: 0
@@ -17417,9 +17362,14 @@ MonoBehaviour:
   animator: {fileID: 730288173}
   cooldown: 0
   lookSpeed: 2
+  interactionTimeout: 5
   inactivityThreshold: 25
   ball: {fileID: 1878330425}
   mouthPosition: {fileID: 699507627}
+  catchBallDistance: 0.9
+  returnDropDistance: 0.3
+  returnMoveSpeed: 1.5
+  fetchStartDelay: 0.35
   canFetchBall: 1
 --- !u!114 &730288188
 MonoBehaviour:
@@ -18174,9 +18124,14 @@ MonoBehaviour:
   animator: {fileID: 762627261}
   cooldown: 0
   lookSpeed: 2
+  interactionTimeout: 5
   inactivityThreshold: 20
   ball: {fileID: 0}
   mouthPosition: {fileID: 0}
+  catchBallDistance: 0.9
+  returnDropDistance: 0.3
+  returnMoveSpeed: 1.5
+  fetchStartDelay: 0.35
   canFetchBall: 0
 --- !u!4 &762627266 stripped
 Transform:
@@ -22549,7 +22504,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rayInteractor: {fileID: 1020404911}
-  logUiHits: 0
 --- !u!114 &1020404909
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -24262,7 +24216,7 @@ Transform:
   m_GameObject: {fileID: 1083276294}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 2.9107442, y: 0.08001698, z: -0.5928251}
+  m_LocalPosition: {x: 2.9107442, y: 0.030016977, z: -0.5928251}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -28539,7 +28493,6 @@ GameObject:
   - component: {fileID: 1251709947}
   - component: {fileID: 1251709946}
   - component: {fileID: 1251709945}
-  - component: {fileID: 1251709950}
   m_Layer: 0
   m_Name: Camera Rig
   m_TagString: Untagged
@@ -28635,8 +28588,8 @@ MonoBehaviour:
   isInsightPassthroughEnabled: 0
   shouldBoundaryVisibilityBeSuppressed: 0
   requestBodyTrackingPermissionOnStartup: 0
-  requestFaceTrackingPermissionOnStartup: 1
-  requestEyeTrackingPermissionOnStartup: 1
+  requestFaceTrackingPermissionOnStartup: 0
+  requestEyeTrackingPermissionOnStartup: 0
   requestScenePermissionOnStartup: 0
   requestRecordAudioPermissionOnStartup: 0
   _localDimming: 1
@@ -28705,27 +28658,6 @@ Transform:
   - {fileID: 869574307}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1251709950
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1251709944}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 94f593d0c86d4afe859a41055a9c8a2e, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
-  centerEyeAnchor: {fileID: 1914283605}
-  targetEyeHeight: 1.62
-  calibrationDelay: 1.5
-  sampleFrames: 30
-  correctionThreshold: 0.12
-  maximumDownwardCorrection: 0.55
-  maximumUpwardCorrection: 0.55
-  groundRayHeight: 2.5
-  groundRayDistance: 5
 --- !u!1 &1254573037
 GameObject:
   m_ObjectHideFlags: 0
@@ -29102,7 +29034,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 07524b858ed4b1e418381f03f48d4d41, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  countdownTimerSeconds: 60
+  countdownTimerSeconds: 30
   doorObject: {fileID: 1839203276}
   skipSurvey: 0
   requiredInteractables:
@@ -39037,7 +38969,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rayInteractor: {fileID: 1763665108}
-  logUiHits: 0
 --- !u!114 &1763665106
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -39728,6 +39659,68 @@ Transform:
   m_Children: []
   m_Father: {fileID: 735709079}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1001 &1768864014
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1603518291700351669, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: scenePrompt
+      value: You are in a warm, familiar indoor room with playful puppies. The participant
+        can pet the puppies and play fetch with them using a ball.
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 1.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7030998814401213132, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_Name
+      value: VRME_Rocketbox_Female_Adult_01
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
 --- !u!1 &1769202708
 GameObject:
   m_ObjectHideFlags: 0
@@ -41791,7 +41784,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &1860485204
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -46918,7 +46911,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   realSceneBuildIndex: 7
   endSceneBuildIndex: 8
-  realSceneWaitTime: 10
+  realSceneWaitTime: 60
 --- !u!4 &2135093330
 Transform:
   m_ObjectHideFlags: 0
@@ -51447,6 +51440,6 @@ SceneRoots:
   - {fileID: 1176326711}
   - {fileID: 1251709949}
   - {fileID: 1083276295}
-  - {fileID: 669213202}
   - {fileID: 454424182}
   - {fileID: 2135093330}
+  - {fileID: 1768864014}

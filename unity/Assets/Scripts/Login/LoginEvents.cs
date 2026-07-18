@@ -119,14 +119,12 @@ public class LoginEvents : MonoBehaviour
                     // Login success.
                     PlayerData.participantId = requestResult.participantId;
                     PlayerData.loginId = participant.loginId;
-                    PlayerData.sessionId = System.Guid.NewGuid().ToString("N");
                     PlayerData.currentSceneIndex = 0;
                     PlayerData.sceneSequence = requestResult.sequence;
 
                     // Show player data.
                     Debug.Log("[Debug] Participant ID: " + PlayerData.participantId);
                     Debug.Log("[Debug] Login ID: " + PlayerData.loginId);
-                    Debug.Log("[Debug] Session ID: " + PlayerData.sessionId);
                     Debug.Log("[Debug] Scene sequence: " + string.Join(", ", PlayerData.sceneSequence));
 
                     // Load the first scene.

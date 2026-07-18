@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Corrects the foot/root offset difference between the former ReadyPlayerMe
@@ -24,21 +25,39 @@ public class AvatarGroundAligner : MonoBehaviour
         // Include the prefab's non-skinned renderers. They provide the stable
         // authored foot bound; animated SkinnedMeshRenderer bounds alone can
         // extend roughly a metre below the visible feet in the prison idle pose.
-        Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
-        if (renderers.Length == 0)
+        Renderer[] allRenderers = GetComponentsInChildren<Renderer>(true);
+        if (allRenderers.Length == 0)
         {
             return;
         }
 
-        Bounds avatarBounds = renderers[0].bounds;
-        for (int i = 1; i < renderers.Length; i++)
+        // Animated Rocketbox skinned bounds can transiently extend about a
+        // metre below the visible feet. Prefer stable non-skinned renderers for
+        // the foot reference, falling back only when a prefab has none.
+        Renderer firstStableRenderer = null;
+        foreach (Renderer renderer in allRenderers)
         {
-            avatarBounds.Encapsulate(renderers[i].bounds);
+            if (!(renderer is SkinnedMeshRenderer))
+            {
+                firstStableRenderer = renderer;
+                break;
+            }
+        }
+        if (firstStableRenderer == null)
+            firstStableRenderer = allRenderers[0];
+
+        Bounds avatarBounds = firstStableRenderer.bounds;
+        foreach (Renderer renderer in allRenderers)
+        {
+            if (firstStableRenderer is SkinnedMeshRenderer || !(renderer is SkinnedMeshRenderer))
+                avatarBounds.Encapsulate(renderer.bounds);
         }
 
         float bestGroundY;
         bool usedParticipantFloor = false;
-        if (!TryResolveGroundY(avatarBounds.center, avatarBounds.min.y, out bestGroundY))
+        bool usedAuthoredRootGround = TryResolveAuthoredRootGroundY(out bestGroundY);
+        if (!usedAuthoredRootGround &&
+            !TryResolveGroundY(avatarBounds.center, avatarBounds.min.y, out bestGroundY))
         {
             OVRCameraRig[] rigs = Object.FindObjectsByType<OVRCameraRig>(FindObjectsSortMode.None);
             bool foundParticipantFloor = false;
@@ -60,7 +79,12 @@ public class AvatarGroundAligner : MonoBehaviour
             }
         }
 
-        float correction = bestGroundY - avatarBounds.min.y;
+        float measuredSoleY;
+        bool usedHumanoidFeet = TryResolveHumanoidSoleY(out measuredSoleY);
+        if (!usedHumanoidFeet)
+            measuredSoleY = avatarBounds.min.y;
+
+        float correction = bestGroundY - measuredSoleY;
         if (Mathf.Abs(correction) > maximumCorrection)
         {
             Debug.LogWarning("[VRME] Avatar ground alignment rejected excessive correction: " + correction);
@@ -70,7 +94,61 @@ public class AvatarGroundAligner : MonoBehaviour
         transform.position += Vector3.up * correction;
         Debug.Log("[VRME] Avatar feet aligned to global floor. groundY=" + bestGroundY.ToString("0.000") +
             ", correctionY=" + correction.ToString("0.000") +
-            ", source=" + (usedParticipantFloor ? "participant_floor_fallback" : "avatar_floor"));
+            ", source=" + (usedAuthoredRootGround ? "authored_root_ground" :
+                (usedParticipantFloor ? "participant_floor_fallback" : "avatar_floor")) +
+            ", footReference=" + (usedHumanoidFeet ? "humanoid_feet" : "renderer_bounds"));
+    }
+
+    private bool TryResolveHumanoidSoleY(out float soleY)
+    {
+        Animator animator = GetComponentInChildren<Animator>(true);
+        if (animator == null || !animator.isHuman)
+        {
+            soleY = 0f;
+            return false;
+        }
+
+        Transform[] footBones =
+        {
+            animator.GetBoneTransform(HumanBodyBones.LeftFoot),
+            animator.GetBoneTransform(HumanBodyBones.RightFoot),
+            animator.GetBoneTransform(HumanBodyBones.LeftToes),
+            animator.GetBoneTransform(HumanBodyBones.RightToes)
+        };
+
+        float lowestBoneY = float.PositiveInfinity;
+        foreach (Transform footBone in footBones)
+        {
+            if (footBone != null)
+                lowestBoneY = Mathf.Min(lowestBoneY, footBone.position.y);
+        }
+
+        if (float.IsPositiveInfinity(lowestBoneY))
+        {
+            soleY = 0f;
+            return false;
+        }
+
+        // Rocketbox foot/toe bones sit about 13.5 cm above the visible shoe
+        // sole in the imported idle/talking rig.
+        soleY = lowestBoneY - 0.135f;
+        return true;
+    }
+
+    private static bool TryResolveAuthoredRootGroundY(out float groundY)
+    {
+        foreach (GameObject root in SceneManager.GetActiveScene().GetRootGameObjects())
+        {
+            if (root != null && string.Equals(
+                root.name, "Ground", System.StringComparison.OrdinalIgnoreCase))
+            {
+                groundY = root.transform.position.y;
+                return true;
+            }
+        }
+
+        groundY = 0f;
+        return false;
     }
 
     private bool TryResolveGroundY(Vector3 horizontalPosition, float expectedFeetY, out float groundY)

@@ -209,7 +209,7 @@ Light:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 20637200}
-  m_Enabled: 0
+  m_Enabled: 1
   serializedVersion: 11
   m_Type: 0
   m_Color: {r: 1, g: 0.9851452, b: 0.8915094, a: 1}
@@ -289,7 +289,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 20637200}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 2929147dea13e5a49810bc5e1b587b3a, type: 3}
   m_Name: 
@@ -839,6 +839,69 @@ Transform:
   - {fileID: 1074274942}
   m_Father: {fileID: 1492511396}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1001 &64717298
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1603518291700351669, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: scenePrompt
+      value: You are inside a narrow, oppressive solitary-confinement cell with disturbing
+        dripping-water sounds. The participant can examine the cup and book and interact
+        with the cell door.
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0.02
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0.73
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7030998814401213132, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: m_Name
+      value: VRME_Rocketbox_Female_Adult_01
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
 --- !u!1 &66175382
 GameObject:
   m_ObjectHideFlags: 0
@@ -3395,7 +3458,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rayInteractor: {fileID: 180085292}
-  logUiHits: 0
 --- !u!114 &180085290
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -9175,69 +9237,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 2069548760}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1001 &472671937
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: 1603518291700351669, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: scenePrompt
-      value: You are inside a narrow, oppressive solitary-confinement cell with disturbing
-        dripping-water sounds. The participant can examine the cup and book and interact
-        with the cell door.
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0.02
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0.73
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7030998814401213132, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
-      propertyPath: m_Name
-      value: VRME_Rocketbox_Female_Adult_01
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
 --- !u!1 &473258580
 GameObject:
   m_ObjectHideFlags: 0
@@ -9361,7 +9360,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 07524b858ed4b1e418381f03f48d4d41, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  countdownTimerSeconds: 60
+  countdownTimerSeconds: 30
   doorObject: {fileID: 655334659}
   skipSurvey: 0
   requiredInteractables: []
@@ -9388,7 +9387,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 477339299}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 02841bb9192d57d4d86732e9929e4753, type: 3}
   m_Name: 
@@ -9408,8 +9407,8 @@ MonoBehaviour:
   gazeVoiceMinimumDwellSeconds: 0.3
   gazeAvatarObjectNameHints: Rocketbox,ReadyPlayerMe,DigitalHuman,SocialAgent,CompanionAvatar
   autoAttachAvatarGazeTargets: 1
-  forceHideGazeDebugVisuals: 0
-  forceShowGazeDebugVisuals: 1
+  forceHideGazeDebugVisuals: 1
+  forceShowGazeDebugVisuals: 0
   disableHandTrackingObjects: 1
   handTrackingObjectNameHints: OVRHandDataSource,OVRLeftHandVisual,OVRRightHandVisual,OpenXRLeftHand,OpenXRRightHand,HandRayInteractor,HandRay,ControllerRay,ControllerRayInteractor,RayInteractor,OVRHands,UnityXRHands
   sampleOnlyWhileVoiceRecording: 0
@@ -9417,7 +9416,7 @@ MonoBehaviour:
   logRuntimeTrackingState: 1
   writeLiveDebugSnapshot: 1
   runtimeDebugIntervalSeconds: 5
-  showGazeDebugMarker: 1
+  showGazeDebugMarker: 0
   showGazeDebugRay: 0
   showGazeDebugOnlyWhileVoiceSampling: 0
   gazeDebugMarkerSize: 0.12
@@ -11804,7 +11803,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rayInteractor: {fileID: 560846020}
-  logUiHits: 0
 --- !u!114 &560846018
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -15987,6 +15985,43 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2fad1ad1b9047f447ad9a2e02f078438, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  bodyPosePlayer: {fileID: 0}
+  enableReplayGrab: 1
+  grabInferenceMode: 4
+  grabDistance: 0.1
+  releaseDistance: 0.2
+  holdYawOnly: 0
+  useHysteresis: 1
+  minHoldTime: 1
+  objectGrabPoint: {fileID: 0}
+  snapRotationToGrabPoint: 1
+  fingerToPalmGrabDistance: 0.1
+  fingerToPalmReleaseDistance: 0.3
+  requiredCurledFingers: 4
+  leftHandJoint: -1
+  rightHandJoint: -1
+  leftThumbTipJoint: -1
+  leftIndexTipJoint: -1
+  rightThumbTipJoint: -1
+  rightIndexTipJoint: -1
+  leftPalmJoint: -1
+  rightPalmJoint: -1
+  leftMiddleTipJoint: -1
+  leftRingTipJoint: -1
+  leftPinkyTipJoint: -1
+  rightMiddleTipJoint: -1
+  rightRingTipJoint: -1
+  rightPinkyTipJoint: -1
+  useClosestPointOnColliders: 1
+  includeChildColliders: 1
+  moveWithRigidbodyInFixedUpdate: 1
+  forceKinematicWhileGrabbed: 1
+  restoreKinematicOnRelease: 1
+  debugLogs: 0
+  warnOnMissingJoints: 1
+  logGrabEvents: 1
+  logProximityEvents: 1
+  logFistGestureEvents: 1
 --- !u!1 &701564205
 GameObject:
   m_ObjectHideFlags: 0
@@ -19802,6 +19837,43 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2fad1ad1b9047f447ad9a2e02f078438, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  bodyPosePlayer: {fileID: 0}
+  enableReplayGrab: 1
+  grabInferenceMode: 4
+  grabDistance: 0.1
+  releaseDistance: 0.2
+  holdYawOnly: 0
+  useHysteresis: 1
+  minHoldTime: 1
+  objectGrabPoint: {fileID: 197773560}
+  snapRotationToGrabPoint: 1
+  fingerToPalmGrabDistance: 0.1
+  fingerToPalmReleaseDistance: 0.3
+  requiredCurledFingers: 4
+  leftHandJoint: -1
+  rightHandJoint: -1
+  leftThumbTipJoint: -1
+  leftIndexTipJoint: -1
+  rightThumbTipJoint: -1
+  rightIndexTipJoint: -1
+  leftPalmJoint: -1
+  rightPalmJoint: -1
+  leftMiddleTipJoint: -1
+  leftRingTipJoint: -1
+  leftPinkyTipJoint: -1
+  rightMiddleTipJoint: -1
+  rightRingTipJoint: -1
+  rightPinkyTipJoint: -1
+  useClosestPointOnColliders: 1
+  includeChildColliders: 1
+  moveWithRigidbodyInFixedUpdate: 1
+  forceKinematicWhileGrabbed: 1
+  restoreKinematicOnRelease: 1
+  debugLogs: 0
+  warnOnMissingJoints: 1
+  logGrabEvents: 1
+  logProximityEvents: 1
+  logFistGestureEvents: 1
 --- !u!1 &920598528
 GameObject:
   m_ObjectHideFlags: 0
@@ -22523,9 +22595,16 @@ MonoBehaviour:
   keepAboveGround: 1
   groundSearchHeight: 2
   groundSearchDistance: 4
-  groundClearance: 0.015
+  groundClearance: 0.002
+  minimumGroundPenetrationForRecovery: 0.02
+  groundRecoveryCheckInterval: 0.25
   maximumSnapUpDistance: 0.6
+  constrainToPlayArea: 1
+  maximumHorizontalDistanceFromSpawn: 6
+  maximumHeightAboveSpawn: 3
+  maximumDepthBelowSpawn: 1
   hasBeenThrown: 0
+  fetchThrowSpeedThreshold: 0.8
   stillThreshold: 2
 --- !u!135 &1057601655
 SphereCollider:
@@ -23482,7 +23561,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &1085522143
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -25791,8 +25870,8 @@ MonoBehaviour:
   isInsightPassthroughEnabled: 0
   shouldBoundaryVisibilityBeSuppressed: 0
   requestBodyTrackingPermissionOnStartup: 0
-  requestFaceTrackingPermissionOnStartup: 1
-  requestEyeTrackingPermissionOnStartup: 1
+  requestFaceTrackingPermissionOnStartup: 0
+  requestEyeTrackingPermissionOnStartup: 0
   requestScenePermissionOnStartup: 0
   requestRecordAudioPermissionOnStartup: 0
   _localDimming: 1
@@ -27669,7 +27748,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &1315224428
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -36474,8 +36553,8 @@ MonoBehaviour:
   hideQuestionnaireOnStart: 1
   enableKeyboardExitTrigger: 1
   keyboardExitTriggerKey: 101
-  repositionRigForSurvey: 1
-  applyLegacySceneResetAfterSurvey: 1
+  repositionRigForSurvey: 0
+  applyLegacySceneResetAfterSurvey: 0
 --- !u!65 &1629654856
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -44213,7 +44292,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   realSceneBuildIndex: 7
   endSceneBuildIndex: 8
-  realSceneWaitTime: 10
+  realSceneWaitTime: 60
 --- !u!4 &2065114156
 Transform:
   m_ObjectHideFlags: 0
@@ -50000,6 +50079,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 14d274eab891b404484c684e24cf1e9d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  _bodyPosePlayer: {fileID: 0}
+  _doorInteraction: {fileID: 8918280150357483102}
+  _touchCollider: {fileID: 934081779}
+  _includeTouchColliderChildren: 1
+  _overlapLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  _leftHandJoint: -1
+  _rightHandJoint: -1
+  _handRadius: 0.06
+  _eitherHandTriggers: 1
+  _cooldownSeconds: 0.25
 --- !u!1 &9152363912423294888
 GameObject:
   m_ObjectHideFlags: 0
@@ -50032,7 +50123,6 @@ SceneRoots:
   - {fileID: 1385187353}
   - {fileID: 477339301}
   - {fileID: 286986401}
-  - {fileID: 472671937}
   - {fileID: 1242032925}
   - {fileID: 2104466186}
   - {fileID: 400097792}
@@ -50042,3 +50132,4 @@ SceneRoots:
   - {fileID: 1537469069}
   - {fileID: 1319642853}
   - {fileID: 2065114156}
+  - {fileID: 64717298}

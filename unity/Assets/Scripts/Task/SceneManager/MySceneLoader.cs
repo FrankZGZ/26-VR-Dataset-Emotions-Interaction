@@ -42,7 +42,7 @@ public class MySceneLoader : MonoBehaviour
     private bool isLoadingRealScene = false;
     
     // Real scene auto-switching variables
-    public float realSceneWaitTime = 10f; // Short passthrough baseline for rapid testing
+    public const float RealSceneWaitTimeSeconds = 20f;
     private Coroutine autoSwitchCoroutine; // Auto-switch coroutine reference
 
     private const int totalParticipants = 85;
@@ -62,6 +62,8 @@ public class MySceneLoader : MonoBehaviour
 
     void Start()
     {
+        ResolveSpecialSceneBuildIndices();
+
         // Read the Latin square sequence from the JSON file
         if (allSequences == null)
         {
@@ -134,9 +136,9 @@ public class MySceneLoader : MonoBehaviour
         string currentSceneName = SceneManager.GetActiveScene().name;
         List<int> canonicalExperimentScenes = GetCanonicalExperimentScenes();
 
-        // A run started from Tutorial/Real is a normal participant run and keeps
-        // the Latin-square order. Starting Play inside an experiment scene is a
-        // recovery/test run, so continue by build order from that scene onward.
+        // Keep the participant/Latin-square path when the run starts from the
+        // tutorial. When Play starts in any experiment scene, rotate the full
+        // six-scene cycle so that scene becomes the first one.
         if (currentSceneName == "Tutorial_Interaction")
         {
             flowSessionInitialized = true;
@@ -158,10 +160,15 @@ public class MySceneLoader : MonoBehaviour
             directSceneResumeMode = true;
             persistentSequentialIndex = 0;
             directRecoverySequence = RotateSequenceToStartAt(canonicalExperimentScenes, currentSceneBuildIndex);
-            Debug.Log($"[SceneFlow] Direct scene recovery mode started from {currentSceneName}; six-scene cycle={string.Join(",", directRecoverySequence)}.");
+            PlayerData.sceneSequence = directRecoverySequence
+                .Select(index => Path.GetFileNameWithoutExtension(SceneUtility.GetScenePathByBuildIndex(index)))
+                .ToArray();
+            PlayerData.currentSceneIndex = 0;
+            Debug.Log($"[SceneFlow] Direct six-scene run started from {currentSceneName}; cycle={string.Join(",", PlayerData.sceneSequence)}.");
         }
 
-        int pid = int.Parse(PlayerData.participantId);
+        int pid = 0;
+        int.TryParse(PlayerData.participantId, out pid);
         if (pid < allSequences.Count)
         {
             var rowList = allSequences[pid];
@@ -179,7 +186,26 @@ public class MySceneLoader : MonoBehaviour
         else
         {
             Debug.LogError($"[LatinSquare] pid={pid} is out of range, allSequences.Count={allSequences.Count}");
+            sequentialScenes = directSceneResumeMode
+                ? new List<int>(directRecoverySequence ?? canonicalExperimentScenes)
+                : new List<int>(canonicalExperimentScenes);
         }
+
+        bool hasCompleteSixSceneSequence =
+            sequentialScenes.Count == canonicalExperimentScenes.Count &&
+            sequentialScenes.Distinct().Count() == canonicalExperimentScenes.Count &&
+            sequentialScenes.All(canonicalExperimentScenes.Contains);
+        if (!hasCompleteSixSceneSequence)
+        {
+            Debug.LogWarning("[SceneFlow] The supplied sequence is not a complete six-scene cycle; using the canonical six scenes instead.");
+            sequentialScenes = directSceneResumeMode
+                ? new List<int>(directRecoverySequence ?? canonicalExperimentScenes)
+                : new List<int>(canonicalExperimentScenes);
+        }
+
+        PlayerData.sceneSequence = sequentialScenes
+            .Select(index => Path.GetFileNameWithoutExtension(SceneUtility.GetScenePathByBuildIndex(index)))
+            .ToArray();
         
         // Check if current scene is the real scene
         if (currentSceneBuildIndex == realSceneBuildIndex)
@@ -192,9 +218,7 @@ public class MySceneLoader : MonoBehaviour
         }
         else
         {
-            // Starting Play directly from any experiment scene is treated as a
-            // resume point. Its Exit continues through Real to the following
-            // scene instead of restarting the sequence from the beginning.
+            // If current is not real scene, find its position in the sequence.
             isLoadingRealScene = false;
             bool currentSceneFoundInSequence = false;
             for (int i = 0; i < sequentialScenes.Count; i++)
@@ -205,17 +229,16 @@ public class MySceneLoader : MonoBehaviour
                     persistentSequentialIndex = currentSequentialIndex; // Save to static variable
                     PlayerData.currentSceneIndex = i;
                     currentSceneFoundInSequence = true;
-                    string mode = directSceneResumeMode ? "direct recovery" : "participant Latin-square";
-                    Debug.Log($"[SceneFlow] Resuming from {SceneManager.GetActiveScene().name} in {mode} mode at sequence position {i + 1}/{sequentialScenes.Count}; next sequence index={currentSequentialIndex}.");
+                    Debug.Log($"[SceneFlow] {currentSceneName} is scene {i + 1}/{sequentialScenes.Count}; next sequence index={currentSequentialIndex}.");
                     break;
                 }
             }
 
             if (!currentSceneFoundInSequence &&
                 currentSceneBuildIndex != endSceneBuildIndex &&
-                SceneManager.GetActiveScene().name != "Tutorial_Interaction")
+                currentSceneName != "Tutorial_Interaction")
             {
-                Debug.LogWarning($"[SceneFlow] Active scene {SceneManager.GetActiveScene().name} (build index {currentSceneBuildIndex}) is not present in the participant sequence; keeping next sequence index={persistentSequentialIndex}.");
+                Debug.LogWarning($"[SceneFlow] {currentSceneName} is not in the active sequence; retaining index {persistentSequentialIndex}.");
                 currentSequentialIndex = persistentSequentialIndex;
             }
         }
@@ -308,6 +331,41 @@ public class MySceneLoader : MonoBehaviour
         return result;
     }
 
+    private void ResolveSpecialSceneBuildIndices()
+    {
+        int resolvedRealIndex = FindBuildIndexBySceneName("Real");
+        int resolvedEndIndex = FindBuildIndexBySceneName("EndScene");
+
+        if (resolvedRealIndex >= 0)
+        {
+            realSceneBuildIndex = resolvedRealIndex;
+        }
+
+        if (resolvedEndIndex >= 0)
+        {
+            endSceneBuildIndex = resolvedEndIndex;
+        }
+
+        if (resolvedRealIndex < 0 || resolvedEndIndex < 0)
+        {
+            Debug.LogError("[SceneFlow] Real and EndScene must both be enabled in Build Settings.");
+        }
+    }
+
+    private int FindBuildIndexBySceneName(string targetSceneName)
+    {
+        for (int buildIndex = 0; buildIndex < SceneManager.sceneCountInBuildSettings; buildIndex++)
+        {
+            string scenePath = SceneUtility.GetScenePathByBuildIndex(buildIndex);
+            if (Path.GetFileNameWithoutExtension(scenePath) == targetSceneName)
+            {
+                return buildIndex;
+            }
+        }
+
+        return -1;
+    }
+
     private List<int> RotateSequenceToStartAt(List<int> source, int firstSceneBuildIndex)
     {
         var rotated = new List<int>(source.Count);
@@ -342,11 +400,11 @@ public class MySceneLoader : MonoBehaviour
         }
     }
     
-    // Auto-switch to next scene after 15 seconds in real scene
+    // Real is a fixed 20-second baseline, independent of stale scene overrides.
     private IEnumerator AutoSwitchAfterDelay()
     {
-        Debug.Log($"[SceneFlow] Real baseline started; advancing in {realSceneWaitTime:0.##} seconds.");
-        yield return new WaitForSecondsRealtime(realSceneWaitTime);
+        Debug.Log($"[SceneFlow] Real baseline started; advancing in {RealSceneWaitTimeSeconds:0.##} seconds.");
+        yield return new WaitForSecondsRealtime(RealSceneWaitTimeSeconds);
         Debug.Log("[SceneFlow] Real baseline complete; loading next scene.");
         LoadNextScene();
     }

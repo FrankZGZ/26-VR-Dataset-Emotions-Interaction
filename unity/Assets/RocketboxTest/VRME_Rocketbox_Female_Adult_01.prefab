@@ -375,11 +375,11 @@ MonoBehaviour:
   placementMask:
     serializedVersion: 2
     m_Bits: 4294967295
-  normalizeAvatarEyeHeight: 0
-  defaultAvatarEyeHeight: 1.6
-  minimumMatchedEyeHeight: 1.4
-  maximumMatchedEyeHeight: 1.82
-  minimumAvatarScale: 0.95
+  normalizeAvatarEyeHeight: 1
+  defaultAvatarEyeHeight: 1.62
+  minimumMatchedEyeHeight: 1.62
+  maximumMatchedEyeHeight: 1.62
+  minimumAvatarScale: 0.85
   maximumAvatarScale: 1.22
   enableNonverbalCues: 1
   enableHeadGazeCues: 0
