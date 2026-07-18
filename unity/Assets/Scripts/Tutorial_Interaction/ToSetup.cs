@@ -6,6 +6,9 @@ using TMPro;
 
 public class ToSetup : MonoBehaviour
 {
+    private const string ExitMovementInstruction =
+        "\n\n<b>Exit movement:</b> Use the controller thumbstick to move to the marked Exit position. You do not need to physically walk there.";
+
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     public Button submitButton; // submit button
     public TMP_InputField inputField; // input field 
@@ -43,6 +46,7 @@ public class ToSetup : MonoBehaviour
             HideObjects();
             // Show objects.
             ShowObjects();
+            AppendExitMovementInstruction();
         }
     }
 
@@ -59,6 +63,27 @@ public class ToSetup : MonoBehaviour
         foreach (GameObject obj in objectsToShow)
         {
             obj.SetActive(true);
+        }
+    }
+
+    private void AppendExitMovementInstruction()
+    {
+        if (instructionObject == null)
+        {
+            return;
+        }
+
+        TMP_Text[] instructionTexts = instructionObject.GetComponentsInChildren<TMP_Text>(true);
+        foreach (TMP_Text instructionText in instructionTexts)
+        {
+            if (instructionText == null ||
+                instructionText.text.IndexOf("Exit", System.StringComparison.OrdinalIgnoreCase) < 0 ||
+                instructionText.text.Contains("You do not need to physically walk there."))
+            {
+                continue;
+            }
+
+            instructionText.text += ExitMovementInstruction;
         }
     }
 

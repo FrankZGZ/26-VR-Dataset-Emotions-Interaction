@@ -51,6 +51,8 @@ public class VrmeAtticClient : MonoBehaviour
     [Tooltip("Legacy server-push mode. Keep this off; the reliable path sends one auto briefing request after the delay.")]
     public bool useBackendProactiveIntro = false;
     [Range(0f, 60f)] public float autoIntroDelaySeconds = 10f;
+    [Tooltip("Tutorial-only delay after the participant has completed the first UI.")]
+    [Range(0f, 5f)] public float tutorialIntroDelayAfterFirstUi = 0.75f;
     [Range(5f, 120f)] public float textPromptReplyTimeoutSeconds = 60f;
     [TextArea(3, 8)] public string autoIntroPrompt =
         "Please give the participant a brief task briefing for the current VR scene. State the avatar's purpose and the single interaction task they should try before free exploration.";
@@ -674,7 +676,17 @@ public class VrmeAtticClient : MonoBehaviour
 
     private async Task RunAutoIntroAsync(float fallbackGraceSeconds = 0f)
     {
-        float delaySeconds = Mathf.Max(0f, autoIntroDelaySeconds + Mathf.Max(0f, fallbackGraceSeconds));
+        bool isTutorial = string.Equals(
+            SceneManager.GetActiveScene().name,
+            "Tutorial_Interaction",
+            StringComparison.OrdinalIgnoreCase);
+        if (isTutorial)
+        {
+            await WaitForTutorialFirstUiAsync();
+        }
+
+        float sceneDelay = isTutorial ? tutorialIntroDelayAfterFirstUi : autoIntroDelaySeconds;
+        float delaySeconds = Mathf.Max(0f, sceneDelay + Mathf.Max(0f, fallbackGraceSeconds));
         Debug.Log("[VRME] Auto briefing fallback armed. delaySeconds=" + delaySeconds +
             ", backendProactive=" + useBackendProactiveIntro +
             ", scene=" + SceneManager.GetActiveScene().name);
@@ -744,6 +756,40 @@ public class VrmeAtticClient : MonoBehaviour
         }
     }
 
+    private async Task WaitForTutorialFirstUiAsync()
+    {
+        ToSetup[] setupScreens = FindObjectsByType<ToSetup>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+        if (setupScreens.Length == 0)
+        {
+            return;
+        }
+
+        Debug.Log("[VRME] Tutorial briefing is waiting for the first participant-ID UI to close.");
+        while (isActiveAndEnabled &&
+               lifetimeCancellation != null && !lifetimeCancellation.IsCancellationRequested)
+        {
+            bool firstUiStillVisible = false;
+            foreach (ToSetup setupScreen in setupScreens)
+            {
+                if (setupScreen != null && setupScreen.gameObject.activeInHierarchy)
+                {
+                    firstUiStillVisible = true;
+                    break;
+                }
+            }
+
+            if (!firstUiStillVisible)
+            {
+                Debug.Log("[VRME] Tutorial first UI completed; avatar briefing may begin.");
+                return;
+            }
+
+            await Task.Yield();
+        }
+    }
+
     private string BuildAutoTaskBriefingPrompt()
     {
         string sceneName = SceneManager.GetActiveScene().name;
@@ -767,7 +813,7 @@ public class VrmeAtticClient : MonoBehaviour
         switch (normalizedName)
         {
             case "tutorial_interaction":
-                return "Hold the right-controller A button to speak with the nearby avatar, then practice grabbing and throwing a blue cube before using the marked Exit.";
+                return "Hold the right-controller A button to speak with the nearby avatar, then practice grabbing and throwing a blue cube. To finish, use the controller thumbstick to move to the marked Exit position; do not physically walk there.";
             case "puppies":
                 return "Use the highlighted tennis ball and throw it toward the highlighted puppy.";
             case "elephant":
