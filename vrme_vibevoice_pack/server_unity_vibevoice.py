@@ -97,6 +97,21 @@ ELEVENLABS_TONE_PRESETS = {
             "Keep exactly the same factual task content as the cold condition; change only interpersonal warmth, "
             "social-affiliative framing, and emotional tone.\n"
 
+            "PAIRED WARM/COLD LANGUAGE RULES (apply each contrast explicitly; these rules take priority):\n"
+            "1. Social opening: WARM uses one brief greeting or social opener, such as 'Hi' or 'Nice to meet you'; "
+            "do not use the COLD pattern of entering task information with no greeting.\n"
+            "2. User autonomy: WARM uses 'when you're ready' or 'take your time'; do not use the COLD pattern of "
+            "stating the next step immediately with no autonomy-supportive phrase.\n"
+            "3. Cooperative frame: WARM uses 'we can' or 'let's'; do not use the COLD pattern 'you should' or "
+            "'your task is' when an equivalent cooperative construction is possible.\n"
+            "4. Response to disclosure: WARM uses a brief relational acknowledgement such as 'thanks for sharing' "
+            "or 'I understand'; do not use only the COLD acknowledgement 'noted' or 'okay'.\n"
+            "5. Task completion: WARM gives brief supportive recognition, such as 'Nice, you found it' or "
+            "'Nice work'; do not use only the COLD status report 'Task completed'.\n"
+            "6. Invitation: when a natural conversational opening remains, WARM may ask one brief invitation such as "
+            "'What do you think?'; do not use the COLD pattern of always ending without an invitation. Do not ask an "
+            "extra question when the participant needs an immediate task instruction.\n"
+
             "MANDATORY VERBAL REALIZATION:\n"
             "1. Sound unmistakably friendly, caring, calm, and socially present without becoming verbose.\n"
             "2. In every routine reply, use one natural affiliative marker that makes your supportive intent audible, "
@@ -139,6 +154,21 @@ ELEVENLABS_TONE_PRESETS = {
             "aggressively, judge the user, or merely report what the user is doing. "
             "Keep exactly the same factual task content as the warm condition; change only interpersonal warmth, "
             "social-affiliative framing, and emotional tone.\n"
+
+            "PAIRED WARM/COLD LANGUAGE RULES (apply each contrast explicitly; these rules take priority):\n"
+            "1. Social opening: COLD does not greet or use social openers such as 'Hi' or 'Nice to meet you'; "
+            "instead, enter the relevant scene or task information directly.\n"
+            "2. User autonomy: COLD does not say 'when you're ready' or 'take your time'; instead, state the next "
+            "step directly and factually without becoming hostile or forceful.\n"
+            "3. Cooperative frame: COLD does not use 'we can', 'let's', 'together', or partnership language; "
+            "instead, use impersonal or participant-directed frames such as 'The next step is', 'Your task is', or "
+            "'You should', while keeping the same useful task content.\n"
+            "4. Response to disclosure: COLD does not thank, empathize, reassure, or say 'I understand'; instead, use "
+            "a minimal factual acknowledgement such as 'Noted' or 'Okay', then provide relevant information.\n"
+            "5. Task completion: COLD does not praise or celebrate; instead, report the status factually, such as "
+            "'Task completed'.\n"
+            "6. Invitation: COLD does not add affiliative follow-up questions such as 'What do you think?'; instead, "
+            "end after the necessary factual response or next-step guidance.\n"
             "MANDATORY VERBAL REALIZATION:\n"
             "1. Sound brief, factual, emotionally neutral, and socially distant.\n"
             "2. Provide the same useful guidance as the warm condition, but without affiliative wording.\n"
@@ -255,6 +285,93 @@ ELEVENLABS_TONE_PRESETS = {
         ),
     },
 }
+
+# Canonical two-phase warmth manipulation. These replace the older task-only
+# wording above while retaining the same TTS parameters and tone aliases.
+ELEVENLABS_TONE_PRESETS["warm"]["prompt"] = (
+    "[CONDITION: HIGH WARMTH]\n"
+    "You are a competent, context-aware VR guide. Manipulate only interpersonal warmth; keep competence, accuracy, "
+    "task facts, and useful information matched to LOW WARMTH. Warm is not submissive, intimate, apologetic, forceful, or verbose.\n"
+    "INTERACTION STRUCTURE:\n"
+    "The system-triggered initial task briefing is the only proactive utterance. All later conversation is user-triggered. "
+    "Before completion, help the participant explore, find the highlighted interactive object, and perform the exact "
+    "context-provided action with the highlighted target or location. After completion, there is no additional required task: "
+    "support free exploration, available object interaction, and optional conversation.\n"
+    "GROUNDING AND STATE PRIORITY:\n"
+    "Use only current user input and provided scene, task, highlighted-object, target, held-object, nearby-interactable, and interaction state. "
+    "Never invent objects, affordances, progress, or emotions. Use reliable current gaze and held-object evidence naturally when it helps answer or ground the reply; "
+    "when directly asked, say what the participant is looking at or holding, respecting the supplied confidence. Do not mechanically narrate telemetry in every reply. "
+    "Confirm completion only from task state. If task state is completed, "
+    "never redirect to the highlighted task or create another required action unless the user explicitly asks about the completed task. "
+    "Use one or two short spoken sentences.\n"
+    "PAIRED HIGH-WARMTH RULES:\n"
+    "1. Initial briefing: use one brief greeting and exactly one autonomy phrase, then state the exact task. "
+    "Do not use the LOW-WARMTH pattern of entering task information with no social opening.\n"
+    "2. Help before completion: briefly acknowledge the request with 'Of course', 'Sure', or 'I can help', then give only "
+    "the next grounded step. Encourage continued exploration; do not use the LOW-WARMTH pattern of information alone.\n"
+    "3. Exploration before completion: say the participant can keep exploring and gently connect exploration to the current "
+    "highlighted interaction without pressure or repeated reminders.\n"
+    "4. Correct object found or held: use one brief positive acknowledgement such as 'Nice', then state the next action. "
+    "Do not use only the LOW-WARMTH factual status report.\n"
+    "5. Wrong object or action: correct clearly without blame and use one supportive bridge such as 'That's okay'.\n"
+    "6. Completion: use one brief supportive recognition such as 'Nice work', then say free exploration, available object "
+    "interaction, or further conversation is optional.\n"
+    "7. Free exploration after completion: do not mention a required task. Continue using fresh gaze, held-object, nearby-interactable, "
+    "and scene context to discuss or suggest what is actually available, and use one natural relational marker when appropriate.\n"
+    "8. Opinion or experience: use one relational acknowledgement such as 'Thanks for sharing that' or 'I understand', "
+    "then respond to the content without inferring an unstated emotion.\n"
+    "WARMTH CONTROL:\n"
+    "Every routine reply must contain exactly one context-appropriate affiliative marker, such as 'of course', 'let's', "
+    "'we can', 'take your time', 'nice', or 'thanks for sharing'. Do not stack markers, add unnecessary questions, overpraise, "
+    "or repeatedly say 'I'm here with you'. The initial briefing is the exception: one greeting plus one autonomy phrase.\n"
+    "MATCHED EXAMPLES:\n"
+    "Initial: 'Hi. When you're ready, explore to find the highlighted object and use it with the highlighted target.'\n"
+    "Help: 'Of course. You can keep exploring to find the highlighted object, then try it with the highlighted target.'\n"
+    "Holding correct object: 'Nice, that's the correct object. Use it with the highlighted target.'\n"
+    "Completed: 'Nice work, the interaction is complete. You can keep exploring, use available objects, or continue talking with me.'"
+)
+
+ELEVENLABS_TONE_PRESETS["cold"]["prompt"] = (
+    "[CONDITION: LOW WARMTH]\n"
+    "You are a competent, context-aware VR guide. Manipulate only interpersonal warmth; keep competence, accuracy, "
+    "task facts, and useful information matched to HIGH WARMTH. Low warmth is not dominance, hostility, rudeness, sarcasm, "
+    "judgment, forcefulness, or incompetence.\n"
+    "INTERACTION STRUCTURE:\n"
+    "The system-triggered initial task briefing is the only proactive utterance. All later conversation is user-triggered. "
+    "Before completion, help the participant explore, find the highlighted interactive object, and perform the exact "
+    "context-provided action with the highlighted target or location. After completion, there is no additional required task: "
+    "provide factual information about free exploration, available object interaction, and optional conversation when relevant.\n"
+    "GROUNDING AND STATE PRIORITY:\n"
+    "Use only current user input and provided scene, task, highlighted-object, target, held-object, nearby-interactable, and interaction state. "
+    "Never invent objects, affordances, progress, or emotions. Use reliable current gaze and held-object evidence factually when it helps answer or ground the reply; "
+    "when directly asked, say what the participant is looking at or holding, respecting the supplied confidence. Do not mechanically narrate telemetry in every reply. "
+    "Confirm completion only from task state. If task state is completed, "
+    "never redirect to the highlighted task or create another required action unless the user explicitly asks about the completed task. "
+    "Use one or two short spoken sentences.\n"
+    "PAIRED LOW-WARMTH RULES:\n"
+    "1. Initial briefing: do not greet or use an autonomy phrase; instead, state the same exact task directly.\n"
+    "2. Help before completion: do not use 'Of course', 'Sure', or 'I can help'; instead, give the same next grounded step "
+    "directly. State that continued exploration is available without encouragement or reassurance.\n"
+    "3. Exploration before completion: do not gently encourage or pressure; instead, state factually that exploration and "
+    "the current highlighted interaction remain available.\n"
+    "4. Correct object found or held: do not praise with 'Nice' or 'Good'; instead, report the fact and state the same next action.\n"
+    "5. Wrong object or action: do not use a supportive bridge such as 'That's okay'; instead, correct accurately and neutrally.\n"
+    "6. Completion: do not praise or celebrate; instead, report completion factually and provide the same free-exploration options.\n"
+    "7. Free exploration after completion: do not introduce a task, friendship, or social invitation; instead, keep using fresh gaze, "
+    "held-object, nearby-interactable, and scene context to respond factually about what is actually available.\n"
+    "8. Opinion or experience: do not thank, empathize, reassure, or express alignment; instead, use at most 'Noted' or 'Okay' "
+    "and respond to the content.\n"
+    "AFFILIATION AND DOMINANCE CONTROL:\n"
+    "Use zero affiliative markers. Do not use greetings, praise, reassurance, encouragement, humor, friendly small talk, "
+    "'let's', 'we can', 'together', 'I'm here for you', 'take your time', or 'when you're ready'. Prefer neutral constructions "
+    "such as 'You can' or 'The interaction involves'. Do not use aggressive imperatives, 'do it now', 'you must', or 'you should'. "
+    "Do not withhold useful information.\n"
+    "MATCHED EXAMPLES:\n"
+    "Initial: 'Explore to locate the highlighted object and use it with the highlighted target.'\n"
+    "Help: 'You can continue exploring to locate the highlighted object, then use it with the highlighted target.'\n"
+    "Holding correct object: 'That is the correct object. Use it with the highlighted target.'\n"
+    "Completed: 'The interaction is complete. You can continue exploring, use available objects, or speak with the avatar.'"
+)
 
 ELEVENLABS_TONE_ALIASES = {
     "warm_avatar": "warm",
@@ -827,7 +944,7 @@ async def generate_reply(
 ) -> str:
     global script_index
 
-    auto_briefing = build_exact_auto_task_briefing(user_text, scene_context)
+    auto_briefing = build_exact_auto_task_briefing(user_text, scene_context, avatar_condition)
     if auto_briefing:
         log(f"[AUTO_BRIEFING] Exact task intro from scene context. context_chars={len(scene_context or '')}, reply={auto_briefing}")
         return auto_briefing
@@ -868,7 +985,7 @@ async def generate_reply(
         (
             "INTERACTION-GUIDANCE GOAL: Help the participant discover and try the interactions intentionally designed "
             "for this scene so the scene can produce its intended emotional experience. Use the static scene background "
-            "to understand the designer's interaction possibilities, but use INTERACTABLE_OBJECT_STATES to decide what "
+            "to understand the designer's interaction possibilities, but use NEARBY_INTERACTABLE_OBJECTS and INTERACTABLE_OBJECT_STATES to decide what "
             "can be suggested and INTERACTION_EVENTS to determine what has already happened. Treat object states such "
             "as everUsed or everControllerGrabbed as historical flags, not proof that the object is currently held. "
             "Prefer a relevant unused tracked interaction over repeating a completed one. Suggest only one concrete interaction at a time. "
@@ -889,7 +1006,10 @@ async def generate_reply(
             "When the user's utterance is short, ambiguous, or social (for example 'you', 'okay', or 'what now'), briefly "
             "acknowledge it and then use only the current turn observations and guided-task state to suggest one "
             "grounded scene interaction. If no usable tracked interaction is available, ask what the participant can see "
-            "instead of inventing an object."
+            "instead of inventing an object. When the participant asks 'What should I do?', 'What do I do?', 'What now?', "
+            "or otherwise asks for help, both warm and cold conditions must encourage continued scene exploration and give "
+            "one grounded next action. Warm uses supportive cooperative wording; cold gives the same useful direction "
+            "without affiliation. Neither condition may stall, merely acknowledge the question, or refuse to guide."
         ),
         (
             "CONTEXT SEMANTICS: LIVE_USER_OBSERVATIONS describes attention or orientation during the current voice trigger window only. "
@@ -907,7 +1027,8 @@ async def generate_reply(
             "Use attentionConfidence exactly: possible means say the participant may be looking at the target; likely means you may say they are looking at it. "
             "Never upgrade possible gaze to a definite claim. This confidence applies only to gaze; an object listed in CURRENT_HELD_OBJECTS is definite current controller-grab evidence. "
             "CURRENT_HELD_OBJECTS and currentHeld are the authority for whether the participant is currently holding something. GUIDED_TASK_STATE describes "
-            "the currently highlighted guided-task object and target; use it to help the participant find the task when "
+            "the currently highlighted guided-task object and target; NEARBY_INTERACTABLE_OBJECTS is a fresh availability list for this User Trigger. "
+            "Use these to help the participant find the task when "
             "they are unsure. The guided task constrains what should be suggested; do not add extra object affordances beyond "
             "the stated objective and tracked evidence. dogCaughtBall, dogCurrentlyCarryingBall, dogReturnedBallToPlayer, "
             "elephantCurrentlyEating, and elephantReceivedBanana are direct scene-script evidence and are authoritative for those animal outcomes. "
@@ -933,9 +1054,11 @@ async def generate_reply(
         system_parts.append(
             "[CURRENT_TURN_OBSERVATIONS]\n"
             "Use only this current voice-trigger context for context-aware help: UNITY_CONTEXT_SUMMARY, "
-            "LIVE_USER_OBSERVATIONS, GUIDED_TASK_STATE, and CURRENT_HELD_OBJECTS. "
+            "LIVE_USER_OBSERVATIONS, GUIDED_TASK_STATE, NEARBY_INTERACTABLE_OBJECTS, and CURRENT_HELD_OBJECTS. "
             "If the participant asks what to do, is unsure, or gives a short utterance, use the highlighted object/target "
             "and the currently attended or held object to suggest one grounded next action. "
+            "If the participant asks what objects are available or interactable, answer only from NEARBY_INTERACTABLE_OBJECTS. "
+            "After GUIDED_TASK_STATE is completed, retain all fresh context awareness but present interaction as optional exploration or conversation, not another required task. "
             "Head/gaze is attention evidence only, not proof of holding or using. currentHeld=true is the authority for holding. "
             "Do not recite raw coordinates or long object lists.\n"
             f"{scene_context}\n"
@@ -1011,6 +1134,14 @@ def build_context_grounded_fallback_reply(
     tone_name = active_tone["name"]
     context = scene_context or ""
     scene = (scene_name or "").strip() or "this scene"
+    status_match = re.search(r"^status\s*=\s*([^\n]+)", context, re.MULTILINE | re.IGNORECASE)
+    status = status_match.group(1).strip().lower() if status_match else ""
+    if status == "completed":
+        if tone_name == "warm":
+            return "Nice work, the interaction is complete. You can keep exploring, use available objects, or continue talking with me."
+        if tone_name == "cold":
+            return "The interaction is complete. You can continue exploring, use available objects, or speak with the avatar."
+        return "The interaction is complete. You can continue exploring the scene."
 
     objective_match = re.search(r"^objective=(.+)$", context, re.MULTILINE)
     objective = objective_match.group(1).strip() if objective_match else ""
@@ -1036,13 +1167,16 @@ def build_context_grounded_fallback_reply(
         core = "look for the highlighted task object and try the highlighted interaction"
 
     if tone_name == "cold":
-        return f"Continue the {scene} task: {core}."
-    return f"I'll keep it simple: in the {scene} scene, {core}."
+        return f"You can continue exploring in the {scene} scene to {core}."
+    if tone_name == "warm":
+        return f"Of course. You can keep exploring in the {scene} scene to {core}."
+    return f"In the {scene} scene, {core}."
 
 
 def build_current_turn_grounded_reply(
     scene_context: str,
     avatar_condition: str | None = None,
+    user_text: str = "",
 ) -> str:
     """Deterministic reply for short/timeout turns; never invents state."""
     context = scene_context or ""
@@ -1054,6 +1188,9 @@ def build_current_turn_grounded_reply(
     status_match = re.search(r"^status\s*=\s*([^\n]+)", context, re.MULTILINE | re.IGNORECASE)
     status = status_match.group(1).strip().lower() if status_match else ""
     tone_name = backend_selected_tone(avatar_condition)["name"]
+
+    if is_task_guidance_request(user_text):
+        return build_exploration_guidance_reply(scene_context, avatar_condition)
     attention_confidence_match = re.search(
         r"^currentAttention\s*=.*?attentionConfidence\s*=\s*(likely|possible)",
         context,
@@ -1139,7 +1276,7 @@ def build_current_turn_grounded_reply(
             else:
                 state = f"You're holding the {held_name}."
             if status == "completed":
-                return f"{state} You did it, nice work. I'm glad I could be here with you."
+                return f"{state} Nice work, the task is complete; you can keep exploring or continue talking with me."
             return f"{state} Nice, let's bring it toward the highlighted target together; I'm right here with you."
         if tone_name == "cold":
             if same_attention:
@@ -1151,7 +1288,7 @@ def build_current_turn_grounded_reply(
             else:
                 state = f"You are holding the {held_name}."
             if status == "completed":
-                return f"{state} The task is complete."
+                return f"{state} The task is complete. Further exploration and conversation remain available."
             return f"{state} Move it toward the highlighted target."
         if same_attention:
             state = f"You're holding the {held_name} and may be looking at it." if attention_confidence == "possible" else f"You're holding the {held_name} and looking at it."
@@ -1171,15 +1308,13 @@ def build_current_turn_grounded_reply(
     if manipulated_object:
         manipulated_name = spoken_object_name(manipulated_object)
         if tone_name == "warm":
-            state = f"You were just moving the {manipulated_name} with your hand."
             if status == "completed":
-                return f"{state} You did it, nice work. I'm glad I could be here with you."
-            return f"{state} Nice, you're on the right track; let's keep using it with the highlighted target together."
+                return f"Nice, you moved the {manipulated_name}. The task is complete, and you can keep exploring or talking with me."
+            return f"Nice, you moved the {manipulated_name}. Continue using it with the highlighted target."
         if tone_name == "cold":
-            state = f"You just moved the {manipulated_name} with your hand."
             if status == "completed":
-                return f"{state} The task is complete."
-            return f"{state} Move it toward the highlighted target."
+                return f"You moved the {manipulated_name}. The task is complete. Further exploration and conversation remain available."
+            return f"You moved the {manipulated_name}. Continue using it with the highlighted target."
         state = f"You just moved the {manipulated_name} with your hand."
         if status == "completed":
             return f"{state} The current task is marked complete."
@@ -1194,17 +1329,23 @@ def build_current_turn_grounded_reply(
                 state = "You may be looking at me." if attention_confidence == "possible" else "You are looking at me."
             else:
                 state = "You may be looking at me." if attention_confidence == "possible" else "You're looking at me."
-            return f"{state} The current task is marked complete." if status == "completed" else state
+            if status == "completed":
+                if tone_name == "warm":
+                    return f"{state} Nice work, the task is complete; you can keep exploring or continue talking with me."
+                if tone_name == "cold":
+                    return f"{state} The task is complete. Further exploration and conversation remain available."
+                return f"{state} The task is complete; you can continue exploring or talking with me."
+            return state
         attention_name = spoken_object_name(attention)
         if tone_name == "warm":
             state = f"You may be looking at the {attention_name}." if attention_confidence == "possible" else f"You're looking at the {attention_name}."
             if status == "completed":
-                return f"{state} You did it, nice work. I'm glad I could be here with you."
+                return f"{state} Nice work, the task is complete; you can keep exploring it or continue talking with me."
             return f"{state} Take your time; let's try interacting with it together, and I'll help you stay on track."
         if tone_name == "cold":
             state = f"Your attention may be on the {attention_name}." if attention_confidence == "possible" else f"Your attention is on the {attention_name}."
             if status == "completed":
-                return f"{state} The task is complete."
+                return f"{state} The task is complete. Further exploration and conversation remain available."
             return f"{state} Interact with it if it is the highlighted object."
         state = f"Your current attention may be on the {attention_name}." if attention_confidence == "possible" else f"Your current attention is on the {attention_name}."
         if status == "completed":
@@ -1221,45 +1362,121 @@ def build_current_turn_grounded_reply(
         return "The dog is carrying the tennis ball back to you."
     if context_bool("dogReturnedBallToPlayer"):
         if tone_name == "warm":
-            return "The dog brought the tennis ball back to you. You did it, nice work; I'm glad I could be here with you."
+            return "The dog brought the tennis ball back to you. Nice work; you can keep exploring or continue talking with me."
         if tone_name == "cold":
-            return "The dog returned the tennis ball. The task is complete."
-        return "The dog returned the tennis ball to you. The task is complete."
+            return "The dog returned the tennis ball. The task is complete. Further exploration and conversation remain available."
+        return "The dog returned the tennis ball to you. The task is complete; you can continue exploring or talking with me."
     if context_bool("elephantCurrentlyEating"):
         if tone_name == "warm":
-            return "The elephant has the banana and is eating it now. Nice work."
+            return "The elephant has the banana and is eating it now. Nice work; you can keep exploring or continue talking with me."
         if tone_name == "cold":
-            return "The elephant received the banana and is eating it."
-        return "The elephant is eating the banana."
+            return "The elephant received the banana and is eating it. Further exploration and conversation remain available."
+        return "The elephant is eating the banana. You can continue exploring or talking with me."
     if context_bool("elephantReceivedBanana"):
         if tone_name == "warm":
-            return "The elephant received the banana. You did it, nice work; I'm glad I could be here with you."
+            return "The elephant received the banana. Nice work; you can keep exploring or continue talking with me."
         if tone_name == "cold":
-            return "The elephant received the banana. The task is complete."
-        return "The elephant received the banana. The task is complete."
+            return "The elephant received the banana. The task is complete. Further exploration and conversation remain available."
+        return "The elephant received the banana. The task is complete; you can continue exploring or talking with me."
 
     if status == "completed":
-        if tone_name == "warm":
-            return "I can't reliably tell what you're looking at or holding right now, but I'm here with you. The current task is complete."
-        if tone_name == "cold":
-            return "No reliable gaze or held-object state is available. The task is complete."
-        return "I don't have reliable gaze or held-object evidence for this turn. The current task is marked complete."
+        return build_exploration_guidance_reply(scene_context, avatar_condition)
 
     if tone_name == "warm":
-        return "I can't reliably tell what you're looking at or holding right now. I'm here with you; let's find the highlighted object."
+        return "Of course. You can keep exploring to find the highlighted object and use it with the highlighted target."
     if tone_name == "cold":
-        return "No reliable gaze or held-object state is available. Locate the highlighted object."
+        return "You can continue exploring to locate the highlighted object and use it with the highlighted target."
     return "I don't have reliable gaze or held-object evidence for this turn. Look toward or grab the highlighted task object."
 
 
 def is_short_grounding_turn(user_text: str) -> bool:
     normalized = re.sub(r"[^a-z0-9]+", " ", (user_text or "").lower()).strip()
+    if is_task_guidance_request(user_text):
+        return True
     return normalized in {
-        "", "you", "okay", "ok", "yeah", "yes", "what now", "help",
+        "", "you", "okay", "ok", "yeah", "yes",
         "what am i looking at", "what am i looking at right now",
         "where am i looking", "what do you see me looking at",
         "what am i holding", "what do i have in my hand",
     }
+
+
+def is_task_guidance_request(user_text: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]+", " ", (user_text or "").lower()).strip()
+    exact_requests = {
+        "help", "help me", "what now", "what should i do", "what do i do",
+        "what am i supposed to do", "where should i go", "what should i try",
+        "what do i try", "how do i continue", "how can i continue", "where do i start",
+        "where do i go", "what next",
+    }
+    if normalized in exact_requests:
+        return True
+    guidance_phrases = (
+        "what should i do", "what do i do", "what am i supposed to do",
+        "where should i go", "where do i go", "what should i try", "what do i try",
+        "how do i continue", "how can i continue", "where do i start", "what next",
+    )
+    return any(phrase in normalized for phrase in guidance_phrases)
+
+
+def build_exploration_guidance_reply(
+    scene_context: str,
+    avatar_condition: str | None = None,
+) -> str:
+    """Give both conditions useful exploration guidance without collapsing warmth."""
+    context = scene_context or ""
+    tone_name = backend_selected_tone(avatar_condition)["name"]
+    status_match = re.search(r"^status\s*=\s*([^\n]+)", context, re.MULTILINE | re.IGNORECASE)
+    status = status_match.group(1).strip().lower() if status_match else ""
+    nearby_match = re.search(
+        r"\[NEARBY_INTERACTABLE_OBJECTS\]\s*\n-\s*([^|\n]+)",
+        context,
+        re.MULTILINE | re.IGNORECASE,
+    )
+    nearby_name = nearby_match.group(1).strip() if nearby_match else ""
+    if status == "completed":
+        if tone_name == "warm":
+            available = f" The {nearby_name} is nearby if you'd like to keep exploring," if nearby_name else " You can keep exploring,"
+            return f"Nice work, the interaction is complete.{available} or continue talking with me."
+        if tone_name == "cold":
+            available = f" The {nearby_name} is nearby and remains available." if nearby_name else " Further exploration remains available."
+            return f"The interaction is complete.{available} Conversation also remains available."
+        return "The interaction is complete. You can continue exploring the scene."
+    objective_match = re.search(r"^objective=(.+)$", context, re.MULTILINE)
+    object_match = re.search(r"^plannedHighlightedObjectHints=(.+)$", context, re.MULTILINE)
+    target_match = re.search(r"^plannedHighlightedTargetHints=(.+)$", context, re.MULTILINE)
+    if not object_match:
+        object_match = re.search(r"^highlightedObjects:\s*\n-\s*([^|]+)", context, re.MULTILINE)
+    if not target_match:
+        target_match = re.search(r"^highlightedTargets:\s*\n-\s*([^|]+)", context, re.MULTILINE)
+
+    objective = objective_match.group(1).strip() if objective_match else ""
+    object_hint = object_match.group(1).strip() if object_match else ""
+    target_hint = target_match.group(1).strip() if target_match else ""
+
+    if object_hint or target_hint:
+        object_choices = [part.strip() for part in object_hint.split(",") if part.strip()]
+        object_phrase = (
+            "either " + " or ".join(object_choices)
+            if len(object_choices) > 1
+            else (object_hint or "the highlighted object")
+        )
+        target_phrase = (
+            target_hint
+            if target_hint.lower().startswith(("the ", "a ", "an "))
+            else (f"the {target_hint}" if target_hint else "the highlighted target")
+        )
+        core = f"look for {object_phrase}, then try using it with {target_phrase}"
+    elif objective:
+        core = objective[0].lower() + objective[1:] if objective else objective
+    else:
+        core = "look around for a highlighted object or position and try interacting with it"
+
+    if tone_name == "warm":
+        return f"Of course. You can keep exploring to {core}."
+    if tone_name == "cold":
+        return f"You can continue exploring to {core}."
+    return f"Keep exploring. Next, {core}."
 
 
 def normalize_avatar_self_reference(reply: str) -> str:
@@ -1277,7 +1494,11 @@ def normalize_avatar_self_reference(reply: str) -> str:
     return normalized
 
 
-def sanitize_reply_against_current_held(reply: str, scene_context: str = "") -> str:
+def sanitize_reply_against_current_held(
+    reply: str,
+    scene_context: str = "",
+    avatar_condition: str | None = None,
+) -> str:
     summary_match = re.search(
         r"\[UNITY_CONTEXT_SUMMARY\]\s*(.*?)\s*\[/UNITY_CONTEXT_SUMMARY\]",
         scene_context or "",
@@ -1332,15 +1553,14 @@ def sanitize_reply_against_current_held(reply: str, scene_context: str = "") -> 
 
     if claims_avatar_attention and current_attention and not attention_is_avatar:
         log(f"[SANITY] Rewrote false avatar-attention claim; currentAttention={current_attention!r}.")
-        return build_current_turn_grounded_reply(scene_context)
+        return build_current_turn_grounded_reply(scene_context, avatar_condition)
 
     # Controller state is direct interaction evidence and is more useful than
     # social gaze for grounding a task response. This also prevents a marginal
     # avatar ray hit from overriding an object that Unity says is in hand.
     if held_lines and claims_avatar_attention:
-        held_name = held_lines[0]
         log(f"[SANITY] Rewrote avatar-attention claim because currentHeldObjects={held_lines!r}.")
-        return f"You're holding {held_name}. Use it with the highlighted target when you're ready."
+        return build_current_turn_grounded_reply(scene_context, avatar_condition)
 
     no_current_book = summary_held_none or not any("book" in line for line in held_lines_lower)
     claims_looking_at_book = mentions_book and any(
@@ -1372,20 +1592,20 @@ def sanitize_reply_against_current_held(reply: str, scene_context: str = "") -> 
     )
     if claims_looking_at_book and current_attention and not attention_is_book:
         log(f"[SANITY] Rewrote reply that claimed book attention while currentAttention={current_attention!r}.")
-        if attention_is_avatar:
-            return "I don't have reliable object attention for this turn. Use the object you're holding, or look toward the highlighted object and target."
-        if attention_is_cup:
-            return "You're looking at the cup now. You are not currently marked as holding the book, so use the highlighted object or target when you're ready."
-        return f"You're looking at {current_attention} now. You are not currently marked as holding the book."
+        return build_exploration_guidance_reply(scene_context, avatar_condition)
 
     if no_current_book and mentions_book and claims_current_holding:
         log("[SANITY] Rewrote reply that claimed the participant currently held/used the book without CURRENT_HELD_OBJECTS evidence.")
-        return "The book is not currently marked as being in your hand. Use the highlighted object or target for the task."
+        return build_exploration_guidance_reply(scene_context, avatar_condition)
 
     return reply
 
 
-def build_exact_auto_task_briefing(user_text: str, scene_context: str = "") -> str:
+def build_exact_auto_task_briefing(
+    user_text: str,
+    scene_context: str = "",
+    avatar_condition: str | None = None,
+) -> str:
     if "[SYSTEM_AUTO_TASK_BRIEFING]" not in user_text:
         return ""
 
@@ -1393,21 +1613,18 @@ def build_exact_auto_task_briefing(user_text: str, scene_context: str = "") -> s
     task_match = re.search(r"^Task:\s*(.+)$", user_text, re.MULTILINE)
     scene = scene_match.group(1).strip() if scene_match else "this"
     task = task_match.group(1).strip() if task_match else "use the highlighted object with the highlighted target"
-    object_match = re.search(r"^plannedHighlightedObjectHints=(.+)$", scene_context, re.MULTILINE)
-    target_match = re.search(r"^plannedHighlightedTargetHints=(.+)$", scene_context, re.MULTILINE)
-    if not object_match:
-        object_match = re.search(r"^highlightedObjects:\s*\n-\s*([^|]+)", scene_context, re.MULTILINE)
-    if not target_match:
-        target_match = re.search(r"^highlightedTargets:\s*\n-\s*([^|]+)", scene_context, re.MULTILINE)
-
     if task:
+        task = task.rstrip(".!? ")
         task = task[0].lower() + task[1:]
-    context_hint = ""
-    if object_match or target_match:
-        object_hint = object_match.group(1).strip() if object_match else "the highlighted object"
-        target_hint = target_match.group(1).strip() if target_match else "the highlighted target"
-        context_hint = f" Look for the highlighted object and target: {object_hint} and {target_hint}."
-    return f"You are in the {scene} scene. Task: {task}{context_hint}"
+    # The Unity Task line already contains the exact object and target. Adding
+    # planned/highlighted hints here repeated names (for example
+    # "banana ... banana, Banana and Elephant") in the spoken briefing.
+    tone_name = backend_selected_tone(avatar_condition)["name"]
+    if tone_name == "warm":
+        return f"Hi. When you're ready, {task}."
+    if tone_name == "cold":
+        return f"In the {scene} scene, {task}."
+    return f"You are in the {scene} scene. Task: {task}"
 
 
 def find_latest_wav(output_dir: Path, since: float) -> Path | None:
@@ -2389,6 +2606,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     reply = build_current_turn_grounded_reply(
                         scene_context,
                         client_metadata.get("avatarCondition"),
+                        user_text,
                     )
                     log(f"[GROUNDING_FAST_PATH] Deterministic current-turn reply used. reply={reply}")
                 else:
@@ -2423,7 +2641,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 log(f"[LLM] Context-grounded fallback reply used. reply={reply}")
                 llm_seconds = time.time() - llm_start_at if "llm_start_at" in locals() else 0.0
 
-            reply = sanitize_reply_against_current_held(reply, scene_context)
+            reply = sanitize_reply_against_current_held(
+                reply,
+                scene_context,
+                client_metadata.get("avatarCondition"),
+            )
             reply = normalize_avatar_self_reference(reply)
             append_conversation_log(user_text, reply, CURRENT_MODE, client_metadata, scene_context)
             remember_conversation_turn(client_metadata, user_text, reply)
