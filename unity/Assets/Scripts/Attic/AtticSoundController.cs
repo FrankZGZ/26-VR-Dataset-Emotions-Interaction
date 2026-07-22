@@ -4,6 +4,9 @@ using UnityEngine;
 
 public class AtticSoundController : MonoBehaviour
 {
+    [Tooltip("Additional time before the armed man and his scream appear.")]
+    public float additionalManDelaySeconds = 10f;
+
     // Start walking time.
     public float startWalkingTime;
     public GameObject man;
@@ -12,6 +15,9 @@ public class AtticSoundController : MonoBehaviour
     public GameObject manCreaming;
     public float manCreamingTime;
 
+    private bool manActivated;
+    private bool screamActivated;
+
     // Gun shot time.
     // public float gunshotTime;
     // public GameObject gunShoting;
@@ -19,7 +25,20 @@ public class AtticSoundController : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        
+        float additionalDelay = Mathf.Max(0f, additionalManDelaySeconds);
+        startWalkingTime = Mathf.Max(0f, startWalkingTime) + additionalDelay;
+        manCreamingTime = Mathf.Max(0f, manCreamingTime) + additionalDelay;
+
+        if (man != null)
+        {
+            man.SetActive(false);
+        }
+        if (manCreaming != null)
+        {
+            manCreaming.SetActive(false);
+        }
+
+        Debug.Log("[Attic] Armed man delayed by an additional " + additionalDelay.ToString("0.0") + " seconds.");
     }
 
     // Update is called once per frame
@@ -31,15 +50,23 @@ public class AtticSoundController : MonoBehaviour
         // gunshotTime -= Time.deltaTime;
 
         // Start walking.
-        if(startWalkingTime <= 0.0f)
+        if(!manActivated && startWalkingTime <= 0.0f)
         {
-            man.SetActive(true);
+            manActivated = true;
+            if (man != null)
+            {
+                man.SetActive(true);
+            }
         }
 
         // Play creaming sound.
-        if(manCreamingTime <= 0.0f)
+        if(!screamActivated && manCreamingTime <= 0.0f)
         {
-            manCreaming.SetActive(true);
+            screamActivated = true;
+            if (manCreaming != null)
+            {
+                manCreaming.SetActive(true);
+            }
         }
 
         // Play gunshot sound.

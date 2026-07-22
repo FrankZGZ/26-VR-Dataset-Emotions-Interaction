@@ -13,6 +13,26 @@ public class CameraPoseSender : MonoBehaviour
     public static string LatestVoiceAttentionSummary = "currentAttention=unknown";
     public static bool VoiceSamplingActive { get; private set; }
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetVoiceContextForPlaySession()
+    {
+        ClearLatestVoiceContext();
+        VoiceSamplingActive = false;
+    }
+
+    public static void ClearLatestVoiceContext()
+    {
+        LatestVoiceRuntimeContextText = "No User Trigger voice-window context is available.";
+        LatestVoiceAttentionSummary = "currentAttention=none, reason=no_current_user_trigger_context";
+    }
+
+    public static void ConsumeLatestVoiceContext(out string attentionSummary, out string runtimeContext)
+    {
+        attentionSummary = LatestVoiceAttentionSummary;
+        runtimeContext = LatestVoiceRuntimeContextText;
+        ClearLatestVoiceContext();
+    }
+
     // Serializable class representing each recorded pose
     [System.Serializable]
     public class CameraPose
@@ -219,6 +239,7 @@ public class CameraPoseSender : MonoBehaviour
     private OVRFaceExpressions faceExpressions;
     private bool attemptedStartEyeTracking;
     private bool attemptedStartFaceTracking;
+    private bool loggedFaceTrackingStatus;
     private readonly Dictionary<string, GazeObjectAccumulator> gazeObjectAccumulators = new Dictionary<string, GazeObjectAccumulator>();
     private string currentGazeObjectKey;
     private float currentGazeObjectRunSeconds;
@@ -235,6 +256,9 @@ public class CameraPoseSender : MonoBehaviour
 
     public static void BeginVoiceSampling()
     {
+        // A User Trigger press owns one isolated perception window. Never let a
+        // previous press or previous scene leak into the next request.
+        ClearLatestVoiceContext();
         VoiceSamplingActive = true;
         CameraPoseSender[] senders = FindObjectsByType<CameraPoseSender>(FindObjectsSortMode.None);
         foreach (CameraPoseSender sender in senders)
@@ -261,6 +285,7 @@ public class CameraPoseSender : MonoBehaviour
 
     private void Start()
     {
+        ClearLatestVoiceContext();
         string participantId = PlayerData.participantId;
         localDirectoryPath = Path.Combine(Application.persistentDataPath, "CameraPoseData", participantId);
         if (!Directory.Exists(localDirectoryPath))
@@ -392,6 +417,15 @@ public class CameraPoseSender : MonoBehaviour
             {
                 Debug.LogWarning("[Debug] Face tracking did not start. This is expected on devices without face tracking or without permission.");
             }
+        }
+
+        if (recordFaceExpressions && !loggedFaceTrackingStatus)
+        {
+            loggedFaceTrackingStatus = true;
+            Debug.Log("[CameraPoseSender] Face-expression collection requested. component=" +
+                (faceExpressions != null) + ", runtimeEnabled=" + OVRPlugin.faceTracking2Enabled +
+                ". ValidExpressions must become true for expression weights to be recorded; " +
+                "otherwise verify headset support, Natural Facial Expressions, app permission, and Link face-tracking support.");
         }
     }
 

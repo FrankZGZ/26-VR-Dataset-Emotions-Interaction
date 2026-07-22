@@ -375,7 +375,7 @@ MonoBehaviour:
   placementMask:
     serializedVersion: 2
     m_Bits: 4294967295
-  normalizeAvatarEyeHeight: 1
+  normalizeAvatarEyeHeight: 0
   defaultAvatarEyeHeight: 1.62
   minimumMatchedEyeHeight: 1.62
   maximumMatchedEyeHeight: 1.62

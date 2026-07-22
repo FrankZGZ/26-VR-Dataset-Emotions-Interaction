@@ -16,6 +16,9 @@ public class LakeThrowTargetVisualizer : MonoBehaviour
 
     private LineRenderer border;
     private Material runtimeMaterial;
+    private bool requestedVisible;
+    private Vector3 requestedCenter;
+    private float requestedRadius = 1.35f;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void RegisterInstaller()
@@ -65,7 +68,7 @@ public class LakeThrowTargetVisualizer : MonoBehaviour
         border = borderObject.AddComponent<LineRenderer>();
         border.useWorldSpace = true;
         border.loop = true;
-        border.positionCount = 4;
+        border.positionCount = 48;
         border.numCornerVertices = 6;
         border.numCapVertices = 6;
         border.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -85,13 +88,13 @@ public class LakeThrowTargetVisualizer : MonoBehaviour
 
         border.startColor = targetColor;
         border.endColor = targetColor;
-        UpdateBorderPositions(targetCollider.bounds);
-        Debug.Log("[LakeTarget] Visible throw target installed over SplashLayer.");
+        ApplyRequestedVisibility();
+        Debug.Log("[LakeTarget] Throw target installed over SplashLayer and waiting for the avatar briefing.");
     }
 
     private void Update()
     {
-        if (border == null)
+        if (border == null || !border.enabled)
         {
             return;
         }
@@ -104,13 +107,41 @@ public class LakeThrowTargetVisualizer : MonoBehaviour
         border.endColor = pulsedColor;
     }
 
-    private void UpdateBorderPositions(Bounds bounds)
+    public void SetTaskHighlightVisible(bool visible, Vector3 targetCenter, float completionRadius)
     {
-        float y = bounds.max.y + heightAboveWater;
-        border.SetPosition(0, new Vector3(bounds.min.x, y, bounds.min.z));
-        border.SetPosition(1, new Vector3(bounds.max.x, y, bounds.min.z));
-        border.SetPosition(2, new Vector3(bounds.max.x, y, bounds.max.z));
-        border.SetPosition(3, new Vector3(bounds.min.x, y, bounds.max.z));
+        requestedVisible = visible;
+        requestedCenter = targetCenter;
+        requestedRadius = Mathf.Max(0.1f, completionRadius);
+        ApplyRequestedVisibility();
+        Debug.Log("[LakeTarget] Throw target visible=" + visible + ".");
+    }
+
+    private void ApplyRequestedVisibility()
+    {
+        if (border == null)
+        {
+            return;
+        }
+
+        if (requestedVisible)
+        {
+            UpdateBorderPositions(requestedCenter, requestedRadius);
+        }
+        border.enabled = requestedVisible;
+    }
+
+    private void UpdateBorderPositions(Vector3 center, float radius)
+    {
+        float y = center.y + heightAboveWater;
+        int pointCount = Mathf.Max(12, border.positionCount);
+        for (int i = 0; i < pointCount; i++)
+        {
+            float angle = (Mathf.PI * 2f * i) / pointCount;
+            border.SetPosition(i, new Vector3(
+                center.x + Mathf.Cos(angle) * radius,
+                y,
+                center.z + Mathf.Sin(angle) * radius));
+        }
     }
 
     private void OnDestroy()

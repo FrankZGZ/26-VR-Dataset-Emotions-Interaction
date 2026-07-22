@@ -6,10 +6,10 @@ using UnityEngine.XR;
 using UnityEngine.XR.OpenXR;
 
 /// <summary>
-/// Recalibrates every immersive scene from the current tracked headset pose so
-/// the virtual eye/floor relationship is consistent. Runtime recenter events
-/// are applied by OpenXR's reference space; this component detects missed Link
-/// callbacks and then verifies height without applying a second world transform.
+/// Aligns the XR tracking floor with scene-authored walkable floors where the
+/// original scenes use a non-zero world Y. Runtime recenter events are applied
+/// by OpenXR's reference space; this component detects missed Link callbacks and
+/// then restores the scene-floor offset without changing participant stature.
 /// </summary>
 public class ParticipantRigHeightCalibrator : MonoBehaviour
 {
@@ -84,6 +84,10 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
             }
 
             calibrator.targetEyeHeight = GetTargetEyeHeight(SceneManager.GetActiveScene().name);
+            // These rigs persist valid Quest floor tracking across scene loads;
+            // align before props can visibly fall onto the mismatched floor.
+            calibrator.calibrationDelay = 0.15f;
+            calibrator.sampleFrames = 10;
         }
     }
 
@@ -482,13 +486,20 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
         eyeSamples.Sort();
         float measuredEyeY = eyeSamples[eyeSamples.Count / 2];
         float measuredHeight = measuredEyeY - floorY;
-        float requiredCorrection = targetEyeHeight - measuredHeight;
+
+        // Quest floor-level tracking already contains the participant's real
+        // standing height. Tunnel and Elephant author their walkable floor away
+        // from world Y=0, so forcing the eye to 1.62 m makes the participant
+        // float and leaves dropped props below the physical tracking floor.
+        // Move only the rig origin onto the authored floor and preserve the
+        // participant's own tracked eye height.
+        float requiredCorrection = floorY - transform.position.y;
 
         if (Mathf.Abs(requiredCorrection) < correctionThreshold)
         {
-            Debug.Log("[VRME] Participant rig height already matches the global scene eye height in " + sceneName +
-                ". measured=" + measuredHeight.ToString("0.00") + "m, target=" +
-                targetEyeHeight.ToString("0.00") + "m, no vertical correction applied.");
+            Debug.Log("[VRME] Participant tracking floor already matches the authored floor in " + sceneName +
+                ". floorY=" + floorY.ToString("0.00") + "m, trackedEyeHeight=" +
+                measuredHeight.ToString("0.00") + "m, no vertical correction applied.");
             calibratedRigY = transform.position.y;
             hasCalibratedRigY = true;
             FinishCalibration();
@@ -504,11 +515,11 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
         yield return null;
 
         float resultingHeight = centerEyeAnchor.position.y - floorY;
-        Debug.Log("[VRME] Participant rig height recalibrated from the current headset pose in " + sceneName +
-            ". floorY=" + floorY.ToString("0.00") +
-            ", measured=" + measuredHeight.ToString("0.00") + "m, target=" +
-            targetEyeHeight.ToString("0.00") + "m, correctionY=" + correction.ToString("0.00") +
-            "m, resultingHeight=" + resultingHeight.ToString("0.00") + "m.");
+        Debug.Log("[VRME] Participant tracking floor aligned in " + sceneName +
+            ". authoredFloorY=" + floorY.ToString("0.00") +
+            "m, previousTrackedEyeHeight=" + measuredHeight.ToString("0.00") +
+            "m, correctionY=" + correction.ToString("0.00") +
+            "m, preservedTrackedEyeHeight=" + resultingHeight.ToString("0.00") + "m.");
         FinishCalibration();
     }
 
@@ -574,13 +585,11 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
 
     private static bool ShouldCalibrateScene(string sceneName)
     {
-        return string.Equals(sceneName, "Tutorial_Interaction", System.StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(sceneName, "Lake", System.StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(sceneName, "Attic", System.StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(sceneName, "Puppies", System.StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(sceneName, "SolitaryConfinement", System.StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(sceneName, "Tunnel", System.StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(sceneName, "Elephant", System.StringComparison.OrdinalIgnoreCase);
+        // Only these original scenes author their walkable surface away from
+        // world Y=0. Other scenes keep Quest floor-level tracking untouched, so
+        // Puppies and the tutorial cannot regain the old recalibration jump.
+        return string.Equals(sceneName, "Tunnel", System.StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(sceneName, "Elephant", System.StringComparison.OrdinalIgnoreCase);
     }
 
     private static float GetTargetEyeHeight(string sceneName)

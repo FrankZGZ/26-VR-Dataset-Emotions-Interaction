@@ -26,6 +26,9 @@ public class InteractionTracker : MonoBehaviour
     public bool wasCollisionUsed { get; private set; } = false;
     public bool isCurrentlyHeld { get; private set; } = false;
     public string lastUseSource { get; private set; } = "";
+    public System.DateTime LastControllerGrabUtc { get; private set; } = System.DateTime.MinValue;
+    public System.DateTime LastCollisionUtc { get; private set; } = System.DateTime.MinValue;
+    public string LastCollisionSourceName { get; private set; } = "";
     private GrabInteractable grabInteractable;
     private HandGrabInteractable handGrabInteractable;
     private IPointableElement pointableElement;
@@ -63,6 +66,7 @@ public class InteractionTracker : MonoBehaviour
             wasGrabbedByController = true;
             isUsed = true;
             lastUseSource = "controller_grab";
+            LastControllerGrabUtc = System.DateTime.UtcNow;
             Debug.Log($"[InteractionTracker] Corrected missed held state for {gameObject.name}; selecting interactor is active.");
             AddRecentEvent("grab:corrected", "refresh");
         }
@@ -135,6 +139,7 @@ public class InteractionTracker : MonoBehaviour
         isCurrentlyHeld = true;
         wasGrabbedByController = true;
         lastUseSource = "controller_grab";
+        LastControllerGrabUtc = System.DateTime.UtcNow;
         Debug.Log($"[InteractionTracker] Object {gameObject.name} grabbed. firstUse={firstUse}");
         AddRecentEvent(firstUse ? "grab:first" : "grab:repeat", interactor != null ? interactor.name : "");
     }
@@ -167,6 +172,7 @@ public class InteractionTracker : MonoBehaviour
             isCurrentlyHeld = true;
             wasGrabbedByController = true;
             lastUseSource = "controller_grab";
+            LastControllerGrabUtc = System.DateTime.UtcNow;
             AddRecentEvent(firstUse ? "grab:first" : "grab:repeat", evt.Identifier.ToString());
         }
         else if (evt.Type == PointerEventType.Unselect || evt.Type == PointerEventType.Cancel)
@@ -188,6 +194,8 @@ public class InteractionTracker : MonoBehaviour
         isUsed = true;
         wasCollisionUsed = true;
         lastUseSource = "collision_or_trigger";
+        LastCollisionUtc = System.DateTime.UtcNow;
+        LastCollisionSourceName = other != null ? other.name : "";
         Debug.Log($"[InteractionTracker] Object {gameObject.name} collision with {(other != null ? other.name : "unknown")}. firstUse={firstUse}");
         AddRecentEvent(firstUse ? "collision:first" : "collision:repeat", other != null ? other.name : "");
     }

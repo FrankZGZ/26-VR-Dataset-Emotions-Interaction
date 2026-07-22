@@ -64,7 +64,7 @@ public class VrmeAtticClient : MonoBehaviour
     [Range(1f, 10f)] public float taskObjectOutlineWidth = 6f;
 
     private readonly ConcurrentQueue<Action> mainThreadActions = new ConcurrentQueue<Action>();
-    private readonly ConcurrentQueue<byte[]> pendingAudioTurns = new ConcurrentQueue<byte[]>();
+    private readonly ConcurrentQueue<PendingAudioTurn> pendingAudioTurns = new ConcurrentQueue<PendingAudioTurn>();
     private ClientWebSocket websocket;
     private CancellationTokenSource cancellation;
     private AudioSource audioSource;
@@ -79,6 +79,7 @@ public class VrmeAtticClient : MonoBehaviour
     private bool taskHighlightsActivated;
     private bool guidedTaskActive;
     private bool guidedTaskCompleted;
+    private DateTime guidedTaskActivatedAtUtc = DateTime.MinValue;
     private CancellationTokenSource lifetimeCancellation;
     private SceneTaskHighlightSpec activeGuidedTaskSpec;
     private readonly List<GameObject> activeGuidedTaskObjects = new List<GameObject>();
@@ -171,19 +172,8 @@ public class VrmeAtticClient : MonoBehaviour
             _ = RunAutoIntroAsync();
         }
 
-        if (!useBackendProactiveIntro && enableTaskHighlights && string.Equals(SceneManager.GetActiveScene().name, "Tunnel", StringComparison.OrdinalIgnoreCase))
-        {
-            _ = ActivateSceneTaskHighlightsAfterDelayAsync(1f);
-        }
-    }
-
-    private async Task ActivateSceneTaskHighlightsAfterDelayAsync(float delaySeconds)
-    {
-        await Task.Delay(TimeSpan.FromSeconds(Mathf.Max(0f, delaySeconds)));
-        if (isActiveAndEnabled && enableTaskHighlights && !taskHighlightsActivated)
-        {
-            ActivateSceneTaskHighlights();
-        }
+        // Task highlights are intentionally activated by the avatar audio
+        // stream start event, so objects and target markers never lead speech.
     }
 
     private async Task ConnectAndSyncBackendConditionAsync()
@@ -395,14 +385,16 @@ public class VrmeAtticClient : MonoBehaviour
         cancellation = null;
     }
 
-    private async Task SendConfigAsync()
+    private async Task SendConfigAsync(bool includeSceneRuntimeContext = true)
     {
         if (websocket == null || websocket.State != WebSocketState.Open)
         {
             return;
         }
 
-        string sceneContext = sendSceneContextWithConfig ? BuildSceneContext() : (sendLiveContextOnlyForVoiceTurn ? "" : BuildSceneContext());
+        string sceneContext = includeSceneRuntimeContext && sendSceneContextWithConfig
+            ? BuildSceneContext()
+            : "";
         string effectiveScenePrompt = GetEffectiveScenePrompt();
         string json =
             "{\"type\":\"config\",\"streamReplyAudio\":" + (streamReplyAudio ? "true" : "false") +
@@ -444,28 +436,47 @@ public class VrmeAtticClient : MonoBehaviour
         LogTurnContextSent(turnContext);
     }
 
-    private string BuildTurnContextString()
+    private string BuildTurnContextString(
+        string voiceAttentionSummary = null,
+        string voiceRuntimeContext = null)
     {
         using (var writer = new StringWriter())
         {
-            string currentHeldObjects = BuildCurrentHeldObjectsSummary();
+            bool hasUserTriggerContext = !string.IsNullOrWhiteSpace(voiceAttentionSummary) &&
+                !string.IsNullOrWhiteSpace(voiceRuntimeContext);
+            string currentHeldObjects = hasUserTriggerContext ? BuildCurrentHeldObjectsSummary() : "none";
             writer.WriteLine("[UNITY_CONTEXT_SUMMARY]");
-            writer.WriteLine(CameraPoseSender.LatestVoiceAttentionSummary);
+            writer.WriteLine(hasUserTriggerContext
+                ? voiceAttentionSummary
+                : "currentAttention=none, reason=no_current_user_trigger_context");
             writer.WriteLine("currentHeldObjects=" + currentHeldObjects);
-            writer.WriteLine("authority=This short summary is generated at voice release and should be treated as the freshest Unity state for gaze attention and held objects.");
+            writer.WriteLine(hasUserTriggerContext
+                ? "authority=This context contains only observations sampled while the current User Trigger was held. It must not be reused for another turn."
+                : "authority=No User Trigger perception window belongs to this automatic text request. Do not infer what the participant is looking at or holding from an earlier turn.");
             writer.WriteLine("[/UNITY_CONTEXT_SUMMARY]");
 
             writer.WriteLine("[IMMEDIATE_UNITY_STATE]");
-            writer.WriteLine(BuildImmediateUnityStateContext());
+            writer.WriteLine(hasUserTriggerContext
+                ? BuildImmediateUnityStateContext()
+                : "none; automatic request has no User Trigger state snapshot");
             writer.WriteLine("[/IMMEDIATE_UNITY_STATE]");
 
             writer.WriteLine("[LIVE_USER_OBSERVATIONS]");
-            writer.WriteLine(CameraPoseSender.LatestVoiceRuntimeContextText);
+            writer.WriteLine(hasUserTriggerContext
+                ? voiceRuntimeContext
+                : "none; automatic request has no User Trigger observation window");
             writer.WriteLine("[/LIVE_USER_OBSERVATIONS]");
 
-            if (includeInteractionContext)
+            if (includeInteractionContext && hasUserTriggerContext)
             {
                 writer.WriteLine(BuildCurrentTurnInteractionContext());
+            }
+            else
+            {
+                Transform player = ResolvePlayerTransform();
+                writer.WriteLine(BuildGuidedTaskContext(
+                    player,
+                    player != null ? player.position : Vector3.zero));
             }
 
             return writer.ToString().TrimEnd();
@@ -524,14 +535,14 @@ public class VrmeAtticClient : MonoBehaviour
         }
     }
 
-    private void LogTurnContextSent(string turnContext)
+    private void LogTurnContextSent(string turnContext, bool isolatedUserTriggerContext = false)
     {
         if (CameraPoseSender.LatestRuntimeContextText.StartsWith("No CameraPoseSender", StringComparison.OrdinalIgnoreCase))
         {
             Debug.LogWarning("[VRME] CameraPoseSender has not produced runtime context yet; sent immediate Unity head state fallback.");
         }
 
-        Debug.Log("[VRME] Unity context summary: " + CameraPoseSender.LatestVoiceAttentionSummary +
+        Debug.Log("[VRME] Unity context sent. isolatedUserTriggerContext=" + isolatedUserTriggerContext +
             ", currentHeldObjects=" + BuildCurrentHeldObjectsSummary());
         Debug.Log("[VRME] Sent voice-turn context. chars=" + turnContext.Length + " preview=" + PreviewForLog(turnContext, 1800));
     }
@@ -662,6 +673,13 @@ public class VrmeAtticClient : MonoBehaviour
         isRecording = false;
         CameraPoseSender.EndVoiceSampling();
 
+        CameraPoseSender.ConsumeLatestVoiceContext(
+            out string voiceAttentionSummary,
+            out string voiceRuntimeContext);
+        string capturedTurnContext = BuildTurnContextString(voiceAttentionSummary, voiceRuntimeContext);
+        InteractionTracker.ClearRecentEvents();
+        Debug.Log("[VRME] Consumed and cleared the current User Trigger perception window.");
+
         if (recordingClip == null || samplePosition <= 0)
         {
             Debug.LogWarning("[VRME] Empty recording.");
@@ -671,7 +689,7 @@ public class VrmeAtticClient : MonoBehaviour
         float[] samples = new float[samplePosition * recordingClip.channels];
         recordingClip.GetData(samples, 0);
         byte[] wavBytes = EncodeWav(samples, recordingClip.channels, sampleRate);
-        await SendAudioAsync(wavBytes);
+        await SendAudioAsync(wavBytes, capturedTurnContext);
     }
 
     private async Task RunAutoIntroAsync(float fallbackGraceSeconds = 0f)
@@ -853,6 +871,7 @@ public class VrmeAtticClient : MonoBehaviour
         activeGuidedTaskMarkers.Clear();
         guidedTaskActive = spec.CompletionMode != GuidedTaskCompletionMode.None;
         guidedTaskCompleted = false;
+        guidedTaskActivatedAtUtc = DateTime.UtcNow;
         taskHighlightsActivated = true;
 
         int objectCount = 0;
@@ -878,7 +897,22 @@ public class VrmeAtticClient : MonoBehaviour
                 continue;
             }
 
-            AddTargetMarker(targetObject, spec);
+            bool isPuppiesScene = string.Equals(sceneName, "Puppies", StringComparison.OrdinalIgnoreCase);
+            bool isElephantScene = string.Equals(sceneName, "Elephant", StringComparison.OrdinalIgnoreCase);
+            bool animalOutlineOnly = isPuppiesScene;
+            if (!animalOutlineOnly)
+            {
+                AddTargetMarker(
+                    targetObject,
+                    spec,
+                    isElephantScene ? taskObjectHighlightColor : taskTargetHighlightColor);
+            }
+            if (isPuppiesScene || isElephantScene)
+            {
+                // An outline makes the selected animal unambiguous. The ground
+                // disc alone is easy to miss underneath a moving animal.
+                AddOutlineHighlight(targetObject, taskObjectHighlightColor, taskObjectOutlineWidth);
+            }
             if (!activeGuidedTaskTargets.Contains(targetObject))
             {
                 activeGuidedTaskTargets.Add(targetObject);
@@ -901,6 +935,10 @@ public class VrmeAtticClient : MonoBehaviour
         {
             HideGuidedTaskSurveyIfNeeded(sceneName);
         }
+        if (string.Equals(sceneName, "Lake", StringComparison.OrdinalIgnoreCase))
+        {
+            SetLakeThrowTargetVisible(true);
+        }
 
         Debug.Log("[VRME] Task highlights active. scene=" + sceneName + ", objects=" + objectCount + ", targets=" + targetCount);
         if (objectCount == 0)
@@ -920,8 +958,8 @@ public class VrmeAtticClient : MonoBehaviour
         {
             case "puppies":
                 return new SceneTaskHighlightSpec(
-                    new[] { "TennisBall", "BallPoint" },
-                    new[] { "Dog", "Puppy" },
+                    new[] { "TennisBall" },
+                    new[] { "VRME_FETCH_DOG" },
                     "Dog target",
                     GuidedTaskCompletionMode.DogFetchReturned,
                     TaskMarkerPlacement.Ground,
@@ -929,8 +967,8 @@ public class VrmeAtticClient : MonoBehaviour
                     0.75f);
             case "elephant":
                 return new SceneTaskHighlightSpec(
-                    new[] { "banana", "Banana" },
-                    new[] { "Elephant" },
+                    new[] { "Banana" },
+                    new[] { "VRME_NEAREST_FEED_ELEPHANT" },
                     "Elephant target",
                     GuidedTaskCompletionMode.ElephantFed,
                     TaskMarkerPlacement.Ground,
@@ -939,12 +977,14 @@ public class VrmeAtticClient : MonoBehaviour
             case "lake":
                 return new SceneTaskHighlightSpec(
                     new[] { "Airplane", "Stone" },
-                    new[] { "Target" },
+                    Array.Empty<string>(),
                     "Lake target",
                     GuidedTaskCompletionMode.ObjectNearTarget,
                     TaskMarkerPlacement.Ground,
                     2.25f,
-                    2.4f);
+                    1.35f,
+                    true,
+                    4f);
             case "solitaryconfinement":
                 return new SceneTaskHighlightSpec(
                     new[] { "Baseball", "Book", "Cup" },
@@ -961,7 +1001,7 @@ public class VrmeAtticClient : MonoBehaviour
                     "Tunnel target",
                     GuidedTaskCompletionMode.PlayerAndObjectNearTarget,
                     TaskMarkerPlacement.Ground,
-                    0.55f,
+                    0.85f,
                     1.35f,
                     true,
                     3f);
@@ -996,8 +1036,22 @@ public class VrmeAtticClient : MonoBehaviour
             forward.Normalize();
         }
 
-        Vector3 candidate = basePosition + forward * Mathf.Max(0.5f, spec.RuntimeTargetForwardDistance);
-        candidate = ProjectPointToWalkableGround(candidate, basePosition);
+        Vector3 candidate;
+        if (string.Equals(sceneName, "Lake", StringComparison.OrdinalIgnoreCase) &&
+            TryGetLakeSurfaceTarget(basePosition, spec.RuntimeTargetForwardDistance, out Vector3 lakeTarget))
+        {
+            candidate = lakeTarget;
+        }
+        else if (string.Equals(sceneName, "Attic", StringComparison.OrdinalIgnoreCase) &&
+            TryGetIndoorAtticTarget(basePosition, forward, spec.RuntimeTargetForwardDistance, out Vector3 atticTarget))
+        {
+            candidate = atticTarget;
+        }
+        else
+        {
+            candidate = basePosition + forward * Mathf.Max(0.5f, spec.RuntimeTargetForwardDistance);
+            candidate = ProjectPointToWalkableGround(candidate, basePosition);
+        }
 
         string runtimeTargetName = "VRME_RuntimeTaskTarget_" + sceneName;
         GameObject existingTarget = GameObject.Find(runtimeTargetName);
@@ -1011,6 +1065,136 @@ public class VrmeAtticClient : MonoBehaviour
         runtimeTarget.transform.position = candidate;
         Debug.Log("[VRME] Runtime task target created. scene=" + sceneName + ", position=" + candidate);
         return runtimeTarget;
+    }
+
+    private bool TryGetLakeSurfaceTarget(Vector3 playerPosition, float distance, out Vector3 targetPosition)
+    {
+        targetPosition = Vector3.zero;
+        GameObject water = FindExactSceneObject("Water");
+        if (water == null || !TryGetRendererBounds(water, out Bounds waterBounds))
+        {
+            return false;
+        }
+
+        Vector3 towardLakeCenter = waterBounds.center - playerPosition;
+        towardLakeCenter.y = 0f;
+        if (towardLakeCenter.sqrMagnitude < 0.01f)
+        {
+            towardLakeCenter = transform.forward;
+            towardLakeCenter.y = 0f;
+        }
+        towardLakeCenter.Normalize();
+
+        // The straight-ahead point from the spawn lies on the jetty. Search
+        // diagonally into the lake and accept a point only when a downward ray
+        // hits Water before it hits a bridge/deck collider.
+        float searchDistance = Mathf.Max(5.5f, distance);
+        float[] waterSearchAngles = { 60f, -60f, 75f, -75f, 45f, -45f };
+        Vector3 candidate = Vector3.zero;
+        bool foundOpenWater = false;
+        foreach (float angle in waterSearchAngles)
+        {
+            Vector3 searchDirection = Quaternion.AngleAxis(angle, Vector3.up) * towardLakeCenter;
+            Vector3 testPoint = playerPosition + searchDirection * searchDistance;
+            testPoint = ClampLakePointInsideBounds(testPoint, waterBounds, 2.75f);
+            if (!IsOpenWaterPoint(testPoint, water, waterBounds))
+            {
+                continue;
+            }
+
+            candidate = testPoint;
+            foundOpenWater = true;
+            break;
+        }
+
+        if (!foundOpenWater)
+        {
+            // Collider layouts can differ between editor and headset builds.
+            // Keep the fallback laterally offset from the player-to-lake-centre
+            // line, rather than falling back onto the jetty again.
+            Vector3 lateral = Vector3.Cross(Vector3.up, towardLakeCenter).normalized;
+            Vector3 firstSide = waterBounds.center + lateral * Mathf.Min(3.5f, waterBounds.extents.x * 0.35f);
+            Vector3 secondSide = waterBounds.center - lateral * Mathf.Min(3.5f, waterBounds.extents.x * 0.35f);
+            firstSide = ClampLakePointInsideBounds(firstSide, waterBounds, 2.75f);
+            secondSide = ClampLakePointInsideBounds(secondSide, waterBounds, 2.75f);
+            candidate = IsOpenWaterPoint(firstSide, water, waterBounds) ? firstSide : secondSide;
+        }
+
+        // The water shader displaces the visible surface above the static mesh
+        // bounds. Ten centimetres was still swallowed by waves in-headset, so
+        // keep the marker clearly above the highest rendered water geometry.
+        candidate.y = waterBounds.max.y + 0.35f;
+        targetPosition = candidate;
+        return true;
+    }
+
+    private static Vector3 ClampLakePointInsideBounds(Vector3 point, Bounds waterBounds, float requestedInset)
+    {
+        float insetX = Mathf.Min(requestedInset, Mathf.Max(0.05f, waterBounds.extents.x - 0.05f));
+        float insetZ = Mathf.Min(requestedInset, Mathf.Max(0.05f, waterBounds.extents.z - 0.05f));
+        point.x = Mathf.Clamp(point.x, waterBounds.min.x + insetX, waterBounds.max.x - insetX);
+        point.z = Mathf.Clamp(point.z, waterBounds.min.z + insetZ, waterBounds.max.z - insetZ);
+        return point;
+    }
+
+    private static bool IsOpenWaterPoint(Vector3 point, GameObject water, Bounds waterBounds)
+    {
+        Vector3 rayOrigin = new Vector3(point.x, waterBounds.max.y + 4f, point.z);
+        if (!Physics.Raycast(
+                rayOrigin,
+                Vector3.down,
+                out RaycastHit hit,
+                Mathf.Max(8f, waterBounds.size.y + 8f),
+                Physics.DefaultRaycastLayers,
+                QueryTriggerInteraction.Collide) ||
+            hit.collider == null)
+        {
+            return false;
+        }
+
+        Transform hitTransform = hit.collider.transform;
+        Transform waterTransform = water.transform;
+        return hitTransform == waterTransform ||
+            hitTransform.IsChildOf(waterTransform) ||
+            waterTransform.IsChildOf(hitTransform) ||
+            hit.collider.name.IndexOf("Water", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private bool TryGetIndoorAtticTarget(
+        Vector3 playerPosition,
+        Vector3 playerForward,
+        float distance,
+        out Vector3 targetPosition)
+    {
+        targetPosition = Vector3.zero;
+        GameObject ground = FindExactSceneObject("Ground");
+        if (ground == null || !TryGetRendererBounds(ground, out Bounds floorBounds))
+        {
+            return false;
+        }
+
+        Vector3 candidate = playerPosition + playerForward * Mathf.Max(1f, distance);
+        float edgeInset = 0.45f;
+        candidate.x = Mathf.Clamp(candidate.x, floorBounds.min.x + edgeInset, floorBounds.max.x - edgeInset);
+        candidate.z = Mathf.Clamp(candidate.z, floorBounds.min.z + edgeInset, floorBounds.max.z - edgeInset);
+        candidate.y = floorBounds.max.y + 0.05f;
+        targetPosition = candidate;
+        return true;
+    }
+
+    private GameObject FindExactSceneObject(string objectName)
+    {
+        Transform[] transforms = FindObjectsByType<Transform>(FindObjectsSortMode.None);
+        foreach (Transform sceneTransform in transforms)
+        {
+            if (sceneTransform != null && sceneTransform.gameObject.activeInHierarchy &&
+                string.Equals(sceneTransform.name, objectName, StringComparison.OrdinalIgnoreCase))
+            {
+                return sceneTransform.gameObject;
+            }
+        }
+
+        return null;
     }
 
     private Vector3 ProjectPointToWalkableGround(Vector3 candidate, Vector3 basePosition)
@@ -1041,6 +1225,15 @@ public class VrmeAtticClient : MonoBehaviour
             return null;
         }
 
+        if (string.Equals(nameHint, "VRME_NEAREST_FEED_ELEPHANT", StringComparison.Ordinal))
+        {
+            return FindNearestFeedElephant();
+        }
+        if (string.Equals(nameHint, "VRME_FETCH_DOG", StringComparison.Ordinal))
+        {
+            return FindFetchDog();
+        }
+
         Transform[] transforms = FindObjectsByType<Transform>(FindObjectsSortMode.None);
         GameObject firstContainsMatch = null;
         foreach (Transform sceneTransform in transforms)
@@ -1064,6 +1257,57 @@ public class VrmeAtticClient : MonoBehaviour
         }
 
         return firstContainsMatch;
+    }
+
+    private GameObject FindNearestFeedElephant()
+    {
+        FeedElephants[] feeders = FindObjectsByType<FeedElephants>(FindObjectsSortMode.None);
+        Transform player = ResolvePlayerTransform();
+        Vector3 reference = player != null ? player.position : transform.position;
+        FeedElephants nearest = null;
+        float nearestDistance = float.PositiveInfinity;
+        foreach (FeedElephants feeder in feeders)
+        {
+            if (feeder == null || !feeder.isActiveAndEnabled)
+            {
+                continue;
+            }
+
+            GameObject elephantObject = feeder.elephant != null ? feeder.elephant : feeder.gameObject;
+            float distance = (elephantObject.transform.position - reference).sqrMagnitude;
+            if (distance < nearestDistance)
+            {
+                nearestDistance = distance;
+                nearest = feeder;
+            }
+        }
+
+        if (nearest == null)
+        {
+            return null;
+        }
+
+        GameObject result = nearest.elephant != null ? nearest.elephant : nearest.gameObject;
+        Debug.Log("[VRME] Elephant highlight resolved to feedable target=" + result.name + ".");
+        return result;
+    }
+
+    private GameObject FindFetchDog()
+    {
+        DogMotion2[] dogs = FindObjectsByType<DogMotion2>(FindObjectsSortMode.None);
+        foreach (DogMotion2 dog in dogs)
+        {
+            if (dog == null || !dog.isActiveAndEnabled || !dog.canFetchBall)
+            {
+                continue;
+            }
+
+            Debug.Log("[VRME] Dog highlight resolved to fetch-capable target=" + dog.gameObject.name + ".");
+            return dog.gameObject;
+        }
+
+        Debug.LogWarning("[VRME] No active DogMotion2 with canFetchBall=true was found; no dog will be highlighted.");
+        return null;
     }
 
     private GameObject ResolveHighlightRoot(GameObject candidate)
@@ -1115,7 +1359,10 @@ public class VrmeAtticClient : MonoBehaviour
         outline.enabled = true;
     }
 
-    private void AddTargetMarker(GameObject target, SceneTaskHighlightSpec spec)
+    private void AddTargetMarker(
+        GameObject target,
+        SceneTaskHighlightSpec spec,
+        Color? markerColorOverride = null)
     {
         if (target == null)
         {
@@ -1154,9 +1401,11 @@ public class VrmeAtticClient : MonoBehaviour
         }
         else
         {
-            float markerY = hasRendererBounds ? bounds.min.y + 0.03f : target.transform.position.y + 0.06f;
+            // Lift the marker clear of floor/water depth fighting. This matters
+            // especially in the dark Tunnel scene.
+            float markerY = hasRendererBounds ? bounds.min.y + 0.08f : target.transform.position.y + 0.10f;
             marker.transform.position = new Vector3(bounds.center.x, markerY, bounds.center.z);
-            marker.transform.localScale = new Vector3(markerRadius, 0.035f, markerRadius);
+            marker.transform.localScale = new Vector3(markerRadius, 0.045f, markerRadius);
         }
 
         Collider markerCollider = marker.GetComponent<Collider>();
@@ -1166,9 +1415,10 @@ public class VrmeAtticClient : MonoBehaviour
         }
 
         Renderer markerRenderer = marker.GetComponent<Renderer>();
+        Color markerColor = markerColorOverride ?? taskTargetHighlightColor;
         if (markerRenderer != null)
         {
-            markerRenderer.material = CreateTaskHighlightMaterial();
+            markerRenderer.material = CreateTaskHighlightMaterial(markerColor);
         }
 
         GameObject lightObject = new GameObject(markerName + "_Light");
@@ -1176,9 +1426,9 @@ public class VrmeAtticClient : MonoBehaviour
         lightObject.transform.localPosition = Vector3.up * 0.5f;
         Light light = lightObject.AddComponent<Light>();
         light.type = LightType.Point;
-        light.color = taskTargetHighlightColor;
-        light.intensity = 1.3f;
-        light.range = Mathf.Max(1.2f, markerRadius * 2.2f);
+        light.color = markerColor;
+        light.intensity = 2.2f;
+        light.range = Mathf.Max(1.8f, markerRadius * 3f);
         light.shadows = LightShadows.None;
         light.renderMode = LightRenderMode.ForcePixel;
         activeGuidedTaskMarkers.Add(marker);
@@ -1274,13 +1524,13 @@ public class VrmeAtticClient : MonoBehaviour
                 }
                 break;
             case GuidedTaskCompletionMode.DogFetchReturned:
-                if (HasAnyDogReturnedBall())
+                if (HasHighlightedDogReturnedBall())
                 {
                     CompleteGuidedTask("dog_fetch_returned_to_player");
                 }
                 break;
             case GuidedTaskCompletionMode.ElephantFed:
-                if (HasAnyElephantBeenFed())
+                if (HasHighlightedElephantBeenFed())
                 {
                     CompleteGuidedTask("elephant_received_banana");
                 }
@@ -1288,12 +1538,13 @@ public class VrmeAtticClient : MonoBehaviour
         }
     }
 
-    private bool HasAnyDogReturnedBall()
+    private bool HasHighlightedDogReturnedBall()
     {
         DogMotion2[] dogs = FindObjectsByType<DogMotion2>(FindObjectsSortMode.None);
         foreach (DogMotion2 dog in dogs)
         {
-            if (dog != null && dog.isActiveAndEnabled && dog.HasReturnedBallToPlayer)
+            if (dog != null && dog.isActiveAndEnabled && dog.HasReturnedBallToPlayer &&
+                IsAssociatedWithActiveGuidedTarget(dog.gameObject))
             {
                 return true;
             }
@@ -1302,12 +1553,42 @@ public class VrmeAtticClient : MonoBehaviour
         return false;
     }
 
-    private bool HasAnyElephantBeenFed()
+    private bool HasHighlightedElephantBeenFed()
     {
         FeedElephants[] feeders = FindObjectsByType<FeedElephants>(FindObjectsSortMode.None);
         foreach (FeedElephants feeder in feeders)
         {
-            if (feeder != null && feeder.isActiveAndEnabled && feeder.HasFedOnce)
+            GameObject elephantObject = feeder != null && feeder.elephant != null
+                ? feeder.elephant
+                : feeder != null ? feeder.gameObject : null;
+            if (feeder != null && feeder.isActiveAndEnabled && feeder.HasFedOnce &&
+                IsAssociatedWithActiveGuidedTarget(elephantObject))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool IsAssociatedWithActiveGuidedTarget(GameObject candidate)
+    {
+        if (candidate == null)
+        {
+            return false;
+        }
+
+        Transform candidateTransform = candidate.transform;
+        foreach (GameObject target in activeGuidedTaskTargets)
+        {
+            if (target == null)
+            {
+                continue;
+            }
+
+            Transform targetTransform = target.transform;
+            if (candidate == target || candidateTransform.IsChildOf(targetTransform) ||
+                targetTransform.IsChildOf(candidateTransform))
             {
                 return true;
             }
@@ -1321,12 +1602,28 @@ public class VrmeAtticClient : MonoBehaviour
         float sqrRadius = radius * radius;
         foreach (GameObject taskObject in activeGuidedTaskObjects)
         {
-            if (taskObject == null || (requirePriorUse && !WasTaskObjectUsed(taskObject)))
+            if (taskObject == null)
             {
                 continue;
             }
 
-            Vector3 objectPosition = taskObject.transform.position;
+            InteractionTracker tracker = ResolveTaskObjectTracker(taskObject);
+            if (tracker != null)
+            {
+                tracker.RefreshCurrentHeldState();
+            }
+
+            bool currentlyHeld = tracker != null && tracker.isCurrentlyHeld;
+            if (requirePriorUse && !currentlyHeld && !WasTaskObjectUsed(taskObject))
+            {
+                continue;
+            }
+
+            // The tracker is attached to the actual rigid/grabbable object and
+            // remains authoritative after release. Falling back to a parent scene
+            // object's unchanged pose can prevent a valid Lake landing from
+            // completing when the grabbable lives on a child object.
+            Vector3 objectPosition = tracker != null ? tracker.transform.position : taskObject.transform.position;
             foreach (GameObject target in activeGuidedTaskTargets)
             {
                 if (target == null)
@@ -1370,12 +1667,33 @@ public class VrmeAtticClient : MonoBehaviour
 
             foreach (GameObject taskObject in activeGuidedTaskObjects)
             {
-                if (taskObject == null || !WasTaskObjectUsed(taskObject))
+                if (taskObject == null)
                 {
                     continue;
                 }
 
-                if ((taskObject.transform.position - player.position).sqrMagnitude <= 1.6f * 1.6f)
+                InteractionTracker tracker = ResolveTaskObjectTracker(taskObject);
+                if (tracker != null)
+                {
+                    tracker.RefreshCurrentHeldState();
+                }
+
+                bool currentlyHeld = tracker != null && tracker.isCurrentlyHeld;
+                if (!currentlyHeld && !WasTaskObjectUsed(taskObject))
+                {
+                    continue;
+                }
+
+                // A participant may pick up the task object before the delayed
+                // avatar briefing makes the marker visible. Current selection is
+                // authoritative and must not require releasing and grabbing again.
+                // Both the participant and the carried/used object must actually
+                // enter the highlighted area; merely keeping it somewhere near
+                // the participant must not clear the task.
+                Transform carriedTransform = tracker != null ? tracker.transform : taskObject.transform;
+                Vector3 objectPosition = carriedTransform.position;
+                objectPosition.y = targetPoint.y;
+                if ((objectPosition - targetPoint).sqrMagnitude <= sqrRadius)
                 {
                     return true;
                 }
@@ -1416,24 +1734,48 @@ public class VrmeAtticClient : MonoBehaviour
 
     private bool HasRecordedTaskObjectUse(GameObject taskObject)
     {
-        InteractionTracker tracker = taskObject != null ? taskObject.GetComponent<InteractionTracker>() : null;
-        if (tracker == null && taskObject != null)
-        {
-            tracker = taskObject.GetComponentInChildren<InteractionTracker>();
-        }
-
+        InteractionTracker tracker = ResolveTaskObjectTracker(taskObject);
         return tracker != null && (tracker.isUsed || tracker.wasGrabbedByController || tracker.wasCollisionUsed);
     }
 
     private bool WasTaskObjectUsed(GameObject taskObject)
     {
-        InteractionTracker tracker = taskObject.GetComponent<InteractionTracker>();
+        InteractionTracker tracker = ResolveTaskObjectTracker(taskObject);
         if (tracker == null)
         {
-            tracker = taskObject.GetComponentInChildren<InteractionTracker>();
+            return false;
         }
 
-        return tracker == null || tracker.isUsed || tracker.wasGrabbedByController || tracker.wasCollisionUsed;
+        bool selectedAfterActivation = tracker.LastControllerGrabUtc != DateTime.MinValue &&
+            tracker.LastControllerGrabUtc >= guidedTaskActivatedAtUtc;
+        bool controllerContactAfterActivation = tracker.LastCollisionUtc != DateTime.MinValue &&
+            tracker.LastCollisionUtc >= guidedTaskActivatedAtUtc &&
+            IsControllerInteractionSource(tracker.LastCollisionSourceName);
+        return selectedAfterActivation || controllerContactAfterActivation;
+    }
+
+    private static bool IsControllerInteractionSource(string sourceName)
+    {
+        if (string.IsNullOrWhiteSpace(sourceName))
+        {
+            return false;
+        }
+
+        return sourceName.IndexOf("ControllerGrabLocation", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            sourceName.IndexOf("HandGrab", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            sourceName.IndexOf("HandAnchor", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            sourceName.IndexOf("ControllerInteractor", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static InteractionTracker ResolveTaskObjectTracker(GameObject taskObject)
+    {
+        if (taskObject == null)
+        {
+            return null;
+        }
+
+        InteractionTracker tracker = taskObject.GetComponent<InteractionTracker>();
+        return tracker != null ? tracker : taskObject.GetComponentInChildren<InteractionTracker>();
     }
 
     private void CompleteGuidedTask(string completionSource)
@@ -1461,6 +1803,20 @@ public class VrmeAtticClient : MonoBehaviour
             }
         }
 
+        foreach (GameObject taskTarget in activeGuidedTaskTargets)
+        {
+            if (taskTarget == null)
+            {
+                continue;
+            }
+
+            Outline outline = taskTarget.GetComponent<Outline>();
+            if (outline != null)
+            {
+                outline.enabled = false;
+            }
+        }
+
         foreach (GameObject marker in activeGuidedTaskMarkers)
         {
             if (marker != null)
@@ -1470,7 +1826,34 @@ public class VrmeAtticClient : MonoBehaviour
         }
 
         activeGuidedTaskMarkers.Clear();
+        if (string.Equals(SceneManager.GetActiveScene().name, "Lake", StringComparison.OrdinalIgnoreCase))
+        {
+            SetLakeThrowTargetVisible(false);
+        }
         Debug.Log("[VRME] Guided task highlights cleared. scene=" + SceneManager.GetActiveScene().name);
+    }
+
+    private void SetLakeThrowTargetVisible(bool visible)
+    {
+        Vector3 targetCenter = Vector3.zero;
+        float completionRadius = 1.35f;
+        if (activeGuidedTaskTargets.Count > 0 && activeGuidedTaskTargets[0] != null)
+        {
+            targetCenter = GetTargetCompletionPoint(activeGuidedTaskTargets[0]);
+        }
+        if (activeGuidedTaskSpec != null)
+        {
+            completionRadius = activeGuidedTaskSpec.CompletionRadius;
+        }
+
+        LakeThrowTargetVisualizer[] visualizers = FindObjectsByType<LakeThrowTargetVisualizer>(FindObjectsSortMode.None);
+        foreach (LakeThrowTargetVisualizer visualizer in visualizers)
+        {
+            if (visualizer != null)
+            {
+                visualizer.SetTaskHighlightVisible(visible, targetCenter, completionRadius);
+            }
+        }
     }
 
     private void HideGuidedTaskSurveyIfNeeded(string sceneName)
@@ -1515,7 +1898,7 @@ public class VrmeAtticClient : MonoBehaviour
         }
     }
 
-    private Material CreateTaskHighlightMaterial()
+    private Material CreateTaskHighlightMaterial(Color highlightColor)
     {
         Shader shader = Shader.Find("Universal Render Pipeline/Lit");
         if (shader == null)
@@ -1525,11 +1908,11 @@ public class VrmeAtticClient : MonoBehaviour
 
         Material material = new Material(shader);
         material.name = "VRME_TaskHighlight_Material";
-        material.color = new Color(taskTargetHighlightColor.r, taskTargetHighlightColor.g, taskTargetHighlightColor.b, 0.55f);
+        material.color = new Color(highlightColor.r, highlightColor.g, highlightColor.b, 0.55f);
         if (material.HasProperty("_EmissionColor"))
         {
             material.EnableKeyword("_EMISSION");
-            material.SetColor("_EmissionColor", taskTargetHighlightColor * 1.6f);
+            material.SetColor("_EmissionColor", highlightColor * 1.6f);
         }
 
         return material;
@@ -1585,6 +1968,18 @@ public class VrmeAtticClient : MonoBehaviour
         Ground,
         ObjectCenter,
         DoorSurface
+    }
+
+    private sealed class PendingAudioTurn
+    {
+        public readonly byte[] WavBytes;
+        public readonly string TurnContext;
+
+        public PendingAudioTurn(byte[] wavBytes, string turnContext)
+        {
+            WavBytes = wavBytes;
+            TurnContext = turnContext;
+        }
     }
 
     private async Task<bool> SendTextPromptAsync(string textPrompt, string sourceLabel = "text_prompt")
@@ -1651,11 +2046,14 @@ public class VrmeAtticClient : MonoBehaviour
         }
     }
 
-    private async Task SendAudioAsync(byte[] wavBytes, bool retryAfterStaleClose = true)
+    private async Task SendAudioAsync(
+        byte[] wavBytes,
+        string capturedTurnContext,
+        bool retryAfterStaleClose = true)
     {
         if (isSending)
         {
-            pendingAudioTurns.Enqueue(wavBytes);
+            pendingAudioTurns.Enqueue(new PendingAudioTurn(wavBytes, capturedTurnContext));
             Debug.Log("[VRME] Queued voice turn while previous reply is still active. pending=" + pendingAudioTurns.Count);
             return;
         }
@@ -1678,9 +2076,11 @@ public class VrmeAtticClient : MonoBehaviour
                 return;
             }
 
-            await SendConfigAsync();
+            // The audio_turn payload below owns the only live context for this
+            // User Trigger press. Do not also send scene-wide historical state.
+            await SendConfigAsync(includeSceneRuntimeContext: false);
 
-            string turnContext = BuildTurnContextString();
+            string turnContext = capturedTurnContext ?? BuildTurnContextString();
             string wavBase64 = Convert.ToBase64String(wavBytes);
             string json = BuildTurnContextJson("audio_turn", turnContext).TrimEnd('}') +
                 ",\"audioFormat\":\"wav\"" +
@@ -1691,7 +2091,7 @@ public class VrmeAtticClient : MonoBehaviour
                 WebSocketMessageType.Text,
                 true,
                 cancellation.Token);
-            LogTurnContextSent(turnContext);
+            LogTurnContextSent(turnContext, isolatedUserTriggerContext: true);
             Debug.Log("[VRME] Sent audio_turn wav bytes: " + wavBytes.Length + ", base64Chars=" + wavBase64.Length);
 
             bool receivedReply = await ReceiveReplyAsync();
@@ -1716,12 +2116,12 @@ public class VrmeAtticClient : MonoBehaviour
             isSending = false;
             if (retryCurrentTurn)
             {
-                _ = SendAudioAsync(wavBytes, false);
+                _ = SendAudioAsync(wavBytes, capturedTurnContext, false);
             }
-            else if (pendingAudioTurns.TryDequeue(out byte[] nextWavBytes))
+            else if (pendingAudioTurns.TryDequeue(out PendingAudioTurn nextTurn))
             {
                 Debug.Log("[VRME] Sending queued voice turn. remaining=" + pendingAudioTurns.Count);
-                _ = SendAudioAsync(nextWavBytes);
+                _ = SendAudioAsync(nextTurn.WavBytes, nextTurn.TurnContext);
             }
         }
     }
@@ -1802,6 +2202,7 @@ public class VrmeAtticClient : MonoBehaviour
         Vector3 playerPosition = player != null ? player.position : Vector3.zero;
         InteractionTracker[] trackers = ResolveInteractionTrackers();
         var currentHeldObjects = new List<string>();
+        var nearbyInteractables = new List<InteractionTracker>();
 
         foreach (InteractionTracker tracker in trackers)
         {
@@ -1811,10 +2212,21 @@ public class VrmeAtticClient : MonoBehaviour
             }
 
             tracker.RefreshCurrentHeldState();
+            if (player == null || Vector3.Distance(playerPosition, tracker.transform.position) <= maxContextObjectDistance)
+            {
+                nearbyInteractables.Add(tracker);
+            }
             if (tracker.isCurrentlyHeld)
             {
                 currentHeldObjects.Add(tracker.ContextName);
             }
+        }
+
+        if (player != null)
+        {
+            nearbyInteractables.Sort((left, right) =>
+                Vector3.Distance(playerPosition, left.transform.position).CompareTo(
+                    Vector3.Distance(playerPosition, right.transform.position)));
         }
 
         using (var writer = new StringWriter())
@@ -1822,6 +2234,27 @@ public class VrmeAtticClient : MonoBehaviour
             writer.WriteLine("[STATIC_SCENE_DESCRIPTION]");
             writer.WriteLine(GetEffectiveScenePrompt());
             writer.WriteLine("[/STATIC_SCENE_DESCRIPTION]");
+            writer.WriteLine("[NEARBY_INTERACTABLE_OBJECTS]");
+            if (nearbyInteractables.Count == 0)
+            {
+                writer.WriteLine("none");
+            }
+            else
+            {
+                int nearbyCount = Mathf.Min(Mathf.Max(1, maxDiscoveredSceneObjects), nearbyInteractables.Count);
+                for (int i = 0; i < nearbyCount; i++)
+                {
+                    InteractionTracker tracker = nearbyInteractables[i];
+                    string location = FormatGuidedTaskLocation(
+                        tracker.ContextName,
+                        tracker.transform.position,
+                        player,
+                        playerPosition);
+                    writer.WriteLine("- " + location + " | currentHeld=" + tracker.isCurrentlyHeld);
+                }
+            }
+            writer.WriteLine("authority=This is a fresh list of tracked, currently available interaction objects near the participant at this User Trigger. It describes availability, not proof that an object was used.");
+            writer.WriteLine("[/NEARBY_INTERACTABLE_OBJECTS]");
             writer.WriteLine("[CURRENT_HELD_OBJECTS]");
             if (currentHeldObjects.Count == 0)
             {
@@ -2867,10 +3300,6 @@ public class VrmeAtticClient : MonoBehaviour
                 if (text.Contains("\"avatar_reply_start\""))
                 {
                     string source = ExtractJsonString(text, "source", "");
-                    if (ShouldActivateHighlightsForReplySource(source))
-                    {
-                        mainThreadActions.Enqueue(() => ActivateSceneTaskHighlightsFromReplyStart(source));
-                    }
                     Debug.Log("[VRME] Avatar reply started. source=" + source);
                     continue;
                 }
@@ -2881,11 +3310,11 @@ public class VrmeAtticClient : MonoBehaviour
                     string source = ExtractJsonString(text, "source", "");
                     int streamSampleRate = ExtractJsonInt(text, "sampleRate", 24000);
                     int streamChannels = ExtractJsonInt(text, "channels", 1);
+                    mainThreadActions.Enqueue(() => BeginPcmStream(streamSampleRate, streamChannels));
                     if (ShouldActivateHighlightsForReplySource(source))
                     {
-                        mainThreadActions.Enqueue(() => ActivateSceneTaskHighlightsFromReplyStart(source));
+                        mainThreadActions.Enqueue(() => ActivateSceneTaskHighlightsFromAudioStart(source));
                     }
-                    mainThreadActions.Enqueue(() => BeginPcmStream(streamSampleRate, streamChannels));
                     Debug.Log("[VRME] Audio stream started. source=" + source + ", sampleRate=" + streamSampleRate + ", channels=" + streamChannels);
                     continue;
                 }
@@ -2976,7 +3405,7 @@ public class VrmeAtticClient : MonoBehaviour
              string.Equals(source, "auto_briefing", StringComparison.OrdinalIgnoreCase));
     }
 
-    private void ActivateSceneTaskHighlightsFromReplyStart(string source)
+    private void ActivateSceneTaskHighlightsFromAudioStart(string source)
     {
         if (!ShouldActivateHighlightsForReplySource(source))
         {
@@ -2984,7 +3413,7 @@ public class VrmeAtticClient : MonoBehaviour
         }
 
         autoIntroSent = true;
-        Debug.Log("[VRME] Activating task highlights at avatar reply start. source=" + source);
+        Debug.Log("[VRME] Activating task highlights at avatar audio start. source=" + source);
         ActivateSceneTaskHighlights();
     }
 

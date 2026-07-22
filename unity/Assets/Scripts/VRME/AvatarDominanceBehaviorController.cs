@@ -24,8 +24,8 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
     public float groundRayDistance = 5f;
     public float maximumFloorDifference = 0.75f;
     public LayerMask placementMask = ~0;
-    [Tooltip("Normalize every conversational avatar to the shared fixed eye height without changing the experimental condition.")]
-    public bool normalizeAvatarEyeHeight = true;
+    [Tooltip("Legacy height normalization. Keep disabled so the authored Rocketbox prefab remains at scale 1.")]
+    public bool normalizeAvatarEyeHeight = false;
     [Tooltip("Fixed eye height shared by every conversational avatar.")]
     public float defaultAvatarEyeHeight = 1.62f;
     public float minimumMatchedEyeHeight = 1.62f;
@@ -142,7 +142,8 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
     {
         if (!normalizeAvatarEyeHeight)
         {
-            Debug.Log("[VRME] Avatar eye-height normalization disabled; using the authored avatar scale.");
+            transform.localScale = Vector3.one;
+            Debug.Log("[VRME] Avatar height normalization disabled; using authored scale=(1,1,1).");
             return;
         }
 

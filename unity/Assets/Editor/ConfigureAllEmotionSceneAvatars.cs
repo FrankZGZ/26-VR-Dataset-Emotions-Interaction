@@ -124,7 +124,7 @@ public static class ConfigureAllEmotionSceneAvatars
                 avatar.GetComponent<AvatarDominanceBehaviorController>();
             if (behaviour != null)
             {
-                behaviour.normalizeAvatarEyeHeight = true;
+                behaviour.normalizeAvatarEyeHeight = false;
                 behaviour.defaultAvatarEyeHeight = 1.62f;
                 behaviour.minimumMatchedEyeHeight = 1.62f;
                 behaviour.maximumMatchedEyeHeight = 1.62f;
