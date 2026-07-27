@@ -25217,7 +25217,7 @@ BoxCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 1
+  m_IsTrigger: 0
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
@@ -25303,7 +25303,7 @@ Transform:
   m_GameObject: {fileID: 910311716}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0.0769, z: 0}
+  m_LocalPosition: {x: 0, y: 0.15, z: 0}
   m_LocalScale: {x: 0.1, y: 0.1, z: 0.1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -48635,7 +48635,7 @@ MonoBehaviour:
   _maxGrabPoints: -1
   _rigidbody: {fileID: 910311717}
   _kinematicWhileSelected: 1
-  _throwWhenUnselected: 1
+  _throwWhenUnselected: 0
 --- !u!114 &1766459389
 MonoBehaviour:
   m_ObjectHideFlags: 0

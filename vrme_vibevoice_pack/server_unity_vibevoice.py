@@ -1,4 +1,5 @@
 import asyncio
+import csv
 import base64
 import io
 import json
@@ -23,6 +24,12 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from groq import AsyncGroq
+
+try:
+    from bleak import BleakClient, BleakScanner
+except ImportError:
+    BleakClient = None
+    BleakScanner = None
 from openai import AsyncOpenAI
 
 
@@ -481,6 +488,28 @@ LATENCY_EVENTS_JSONL_PATH = Path(os.environ.get(
     "LATENCY_EVENTS_JSONL_PATH",
     PROJECT_DIR / "latency_events.jsonl",
 ))
+HEART_RATE_OUTPUT_DIR = Path(os.environ.get(
+    "HEART_RATE_OUTPUT_DIR",
+    PROJECT_DIR / "heart_rate_recordings",
+))
+HEART_RATE_DEVICE_NAME = os.environ.get("HEART_RATE_DEVICE_NAME", "Polar").strip()
+HEART_RATE_UUID = "00002a37-0000-1000-8000-00805f9b34fb"
+heart_rate_state = {
+    "available": False,
+    "bpm": 0,
+    "rrIntervalsMs": [],
+    "source": "Polar H10 collector starting",
+    "timestampUtc": "",
+    "receivedAtMonotonic": 0.0,
+}
+heart_rate_context = {
+    "participantId": "unknown",
+    "loginId": "",
+    "sessionId": "unknown",
+    "sceneName": "unknown",
+    "avatarCondition": "unknown",
+}
+heart_rate_task: asyncio.Task | None = None
 SERVER_RUN_ID = os.environ.get("SERVER_RUN_ID", uuid.uuid4().hex)
 CONVERSATION_MEMORY_TURNS = int(os.environ.get("CONVERSATION_MEMORY_TURNS", "0"))
 LLM_REPLY_TIMEOUT_SECONDS = float(os.environ.get("LLM_REPLY_TIMEOUT_SECONDS", "4.0"))
@@ -2373,8 +2402,109 @@ async def run_delayed_proactive_guide(
         log(f"[PROACTIVE] Failed guide for key={guide_key}: {type(exc).__name__}: {exc}")
 
 
+def parse_heart_rate_measurement(data: bytearray) -> tuple[int, list[float]]:
+    flags = data[0]
+    uses_uint16 = bool(flags & 0x01)
+    bpm = int.from_bytes(data[1:3], "little") if uses_uint16 else int(data[1])
+    offset = 3 if uses_uint16 else 2
+    if flags & 0x08:
+        offset += 2
+    rr_intervals_ms: list[float] = []
+    if flags & 0x10:
+        while offset + 1 < len(data):
+            rr_1024 = int.from_bytes(data[offset:offset + 2], "little")
+            rr_intervals_ms.append(round(rr_1024 * 1000.0 / 1024.0, 3))
+            offset += 2
+    return bpm, rr_intervals_ms
+
+
+def append_heart_rate_csv(timestamp_utc: str, bpm: int, rr_intervals_ms: list[float]) -> None:
+    HEART_RATE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    session = safe_filename_part(heart_rate_context.get("sessionId"))[:32]
+    path = HEART_RATE_OUTPUT_DIR / f"HeartRate_{session}.csv"
+    new_file = not path.exists()
+    with path.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        if new_file:
+            writer.writerow(["TimestampUtc", "HeartRateBpm", "RRIntervalsMs", "ParticipantId",
+                             "LoginId", "SessionId", "SceneName", "AvatarCondition", "Source"])
+        writer.writerow([
+            timestamp_utc, bpm, json.dumps(rr_intervals_ms, separators=(",", ":")),
+            heart_rate_context.get("participantId", "unknown"), heart_rate_context.get("loginId", ""),
+            heart_rate_context.get("sessionId", "unknown"), heart_rate_context.get("sceneName", "unknown"),
+            heart_rate_context.get("avatarCondition", "unknown"), heart_rate_state.get("source", "Polar H10"),
+        ])
+
+
+async def run_heart_rate_collector() -> None:
+    if BleakScanner is None or BleakClient is None:
+        heart_rate_state["source"] = "bleak is not installed in the backend environment"
+        log("[HEART_RATE] Bleak unavailable; install requirements.txt to enable Polar H10.")
+        return
+    while True:
+        try:
+            heart_rate_state.update(available=False, bpm=0, source="Scanning for Polar H10")
+            log(f"[HEART_RATE] Scanning for BLE device containing {HEART_RATE_DEVICE_NAME!r}...")
+            devices = await BleakScanner.discover(timeout=8.0)
+            device = next((item for item in devices if item.name and
+                           HEART_RATE_DEVICE_NAME.lower() in item.name.lower()), None)
+            if device is None:
+                heart_rate_state["source"] = f"No BLE device matching {HEART_RATE_DEVICE_NAME!r} found"
+                await asyncio.sleep(5.0)
+                continue
+            source = f"Polar H10 via backend ({device.name})"
+            async with BleakClient(device) as client:
+                heart_rate_state["source"] = source
+                log(f"[HEART_RATE] Connected to {device.name} ({device.address}).")
+                log(f"[HEART_RATE] CSV output directory: {HEART_RATE_OUTPUT_DIR}")
+                last_console_log_at = 0.0
+
+                def notification_handler(_sender, payload: bytearray) -> None:
+                    nonlocal last_console_log_at
+                    try:
+                        bpm, rr_intervals_ms = parse_heart_rate_measurement(payload)
+                        timestamp_utc = datetime.utcnow().isoformat(timespec="milliseconds") + "Z"
+                        heart_rate_state.update(available=True, bpm=bpm, rrIntervalsMs=rr_intervals_ms,
+                                                source=source, timestampUtc=timestamp_utc,
+                                                receivedAtMonotonic=time.monotonic())
+                        append_heart_rate_csv(timestamp_utc, bpm, rr_intervals_ms)
+                        now = time.monotonic()
+                        if bpm > 0 and now - last_console_log_at >= 5.0:
+                            log(f"[HEART_RATE] Live BPM={bpm}, RR(ms)={rr_intervals_ms or 'none'}, "
+                                f"scene={heart_rate_context.get('sceneName', 'unknown')}, "
+                                f"condition={heart_rate_context.get('avatarCondition', 'unknown')}")
+                            last_console_log_at = now
+                    except Exception as exc:
+                        log(f"[HEART_RATE] Failed to parse/write measurement: {exc}")
+
+                await client.start_notify(HEART_RATE_UUID, notification_handler)
+                while client.is_connected:
+                    await asyncio.sleep(1.0)
+                heart_rate_state.update(available=False, bpm=0, source="Polar H10 disconnected")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            heart_rate_state.update(available=False, bpm=0, source=f"Polar H10 error: {exc}")
+            log(f"[HEART_RATE] Collector error; retrying: {exc}")
+            await asyncio.sleep(5.0)
+
+
+@app.get("/heart-rate")
+async def get_heart_rate():
+    age_seconds = (max(0.0, time.monotonic() - float(heart_rate_state["receivedAtMonotonic"]))
+                   if heart_rate_state["receivedAtMonotonic"] else 1e9)
+    fresh = bool(heart_rate_state["available"] and age_seconds <= 5.0)
+    return {"available": fresh, "bpm": heart_rate_state["bpm"] if fresh else 0,
+            "rrIntervalsMs": heart_rate_state["rrIntervalsMs"] if fresh else [],
+            "source": heart_rate_state["source"], "timestampUtc": heart_rate_state["timestampUtc"],
+            "ageSeconds": age_seconds}
+
+
 @app.on_event("startup")
 async def preload_vibevoice_worker():
+    global heart_rate_task
+    log("[HEART_RATE] Polar collector starting automatically with the avatar backend.")
+    heart_rate_task = asyncio.create_task(run_heart_rate_collector())
     log(f"[STARTUP] SERVER_BUILD_TAG={SERVER_BUILD_TAG}")
     log(f"[STARTUP] SERVER_FILE={Path(__file__).resolve()}")
     log(f"[STARTUP] PROACTIVE_GUIDE enabled={PROACTIVE_GUIDE_ENABLED}, delay={PROACTIVE_GUIDE_DELAY_SECONDS}, scenes={sorted(PROACTIVE_GUIDE_SCENES)}")
@@ -2385,6 +2515,12 @@ async def preload_vibevoice_worker():
 
 @app.on_event("shutdown")
 async def shutdown_vibevoice_worker():
+    if heart_rate_task is not None:
+        heart_rate_task.cancel()
+        try:
+            await heart_rate_task
+        except asyncio.CancelledError:
+            pass
     vibevoice_worker_client.stop()
 
 
@@ -2456,6 +2592,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             value = data.get(key)
                             if isinstance(value, str) and value.strip():
                                 client_metadata[key] = value.strip()
+                                heart_rate_context[key] = value.strip()
                         scene_index = data.get("sceneIndex")
                         if isinstance(scene_index, int):
                             client_metadata["sceneIndex"] = scene_index

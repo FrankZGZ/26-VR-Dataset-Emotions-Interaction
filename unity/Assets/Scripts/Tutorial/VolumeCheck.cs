@@ -13,7 +13,7 @@ public class VolumeCheck : MonoBehaviour
     public string verificationCode = "3241"; // Verification code
     public GameObject instructionObject; // Instructions
     public Text message; // Instruction text
-    public GameObject rightController; // Right controller object.
+    public GameObject rightController; // Legacy XRI reference retained for scene compatibility.
     public GameObject teleporationArea; // Teleportation area object.
 
     // Start is called before the first frame update
@@ -36,9 +36,10 @@ public class VolumeCheck : MonoBehaviour
             this.gameObject.SetActive(false);
             // Show instruction object.
             instructionObject.SetActive(true);
-            // Set right controller XR Ray Interactor to Projectile Curve.
-            rightController.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactors.XRRayInteractor>().lineType = UnityEngine.XR.Interaction.Toolkit.Interactors.XRRayInteractor.LineType.ProjectileCurve;
-            // Enabling teleportation area.
+            // The project now uses Meta's TeleportControllerInteractor and its
+            // ArcVisuals, matching the prison scene. The old XRI component no
+            // longer exists on RightHandAnchor, so touching it here aborted the
+            // flow before the teleport surface could be enabled.
             teleporationArea.SetActive(true);
         }
         else

@@ -59,7 +59,49 @@ public class ToSetup : MonoBehaviour
         foreach (GameObject obj in objectsToShow)
         {
             obj.SetActive(true);
+            if (obj.name.StartsWith("BlueCube", System.StringComparison.OrdinalIgnoreCase))
+            {
+                PlaceGrabCubeAboveGround(obj);
+            }
         }
+    }
+
+    private static void PlaceGrabCubeAboveGround(GameObject cube)
+    {
+        GameObject ground = GameObject.Find("Ground");
+        Collider cubeCollider = cube.GetComponent<Collider>();
+        if (ground == null || cubeCollider == null)
+        {
+            Debug.LogWarning("[Tutorial] Could not repair grab-cube height for " + cube.name +
+                ": Ground or Collider was not found.");
+            return;
+        }
+
+        // The Editor can restore an unsaved Temp/__Backupscenes copy containing
+        // the old near-zero cube Y. Position from the collider bottom instead of
+        // trusting serialized coordinates, leaving a 20 cm grab clearance.
+        const float grabClearance = 0.20f;
+        Physics.SyncTransforms();
+        float targetBottomY = ground.transform.position.y + grabClearance;
+        float correctionY = targetBottomY - cubeCollider.bounds.min.y;
+        cube.transform.position += Vector3.up * correctionY;
+        Physics.SyncTransforms();
+
+        Rigidbody body = cube.GetComponent<Rigidbody>();
+        if (body != null)
+        {
+            body.linearVelocity = Vector3.zero;
+            body.angularVelocity = Vector3.zero;
+        }
+
+        TutorialGrabCubeAnchor anchor = cube.GetComponent<TutorialGrabCubeAnchor>();
+        if (anchor == null)
+            anchor = cube.AddComponent<TutorialGrabCubeAnchor>();
+        anchor.InitializeAtCurrentPose();
+
+        Debug.Log("[Tutorial] Grab cube placed above ground. name=" + cube.name +
+            ", centerY=" + cube.transform.position.y.ToString("0.00") +
+            ", colliderBottomY=" + cubeCollider.bounds.min.y.ToString("0.00") + ".");
     }
 
 }

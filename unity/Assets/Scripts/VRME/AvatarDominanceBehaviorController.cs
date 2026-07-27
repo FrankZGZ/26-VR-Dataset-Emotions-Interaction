@@ -24,13 +24,13 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
     public float groundRayDistance = 5f;
     public float maximumFloorDifference = 0.75f;
     public LayerMask placementMask = ~0;
-    [Tooltip("Normalize the avatar's eye height once at scene start to match the participant without changing the experimental condition.")]
-    public bool normalizeAvatarEyeHeight = false;
-    [Tooltip("Fallback eye height used only when headset height is unavailable or implausible.")]
-    public float defaultAvatarEyeHeight = 1.60f;
-    public float minimumMatchedEyeHeight = 1.40f;
-    public float maximumMatchedEyeHeight = 1.82f;
-    public float minimumAvatarScale = 0.95f;
+    [Tooltip("Normalize every conversational avatar to the shared fixed eye height without changing the experimental condition.")]
+    public bool normalizeAvatarEyeHeight = true;
+    [Tooltip("Fixed eye height shared by every conversational avatar.")]
+    public float defaultAvatarEyeHeight = 1.62f;
+    public float minimumMatchedEyeHeight = 1.62f;
+    public float maximumMatchedEyeHeight = 1.62f;
+    public float minimumAvatarScale = 0.85f;
     public float maximumAvatarScale = 1.22f;
 
     [Header("Nonverbal dominance cues")]
@@ -150,10 +150,9 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
         }
 
         float participantEyeHeight = Mathf.Max(0f, participantHead.position.y - authoredRootY);
-        bool participantHeightIsPlausible = participantEyeHeight >= 1.0f && participantEyeHeight <= 2.2f;
-        float targetEyeHeight = participantHeightIsPlausible
-            ? Mathf.Clamp(participantEyeHeight, minimumMatchedEyeHeight, maximumMatchedEyeHeight)
-            : Mathf.Clamp(defaultAvatarEyeHeight, minimumMatchedEyeHeight, maximumMatchedEyeHeight);
+        // Avatar stature is an experimental constant. Do not rescale it from a
+        // transient or incorrectly recentered headset pose.
+        float targetEyeHeight = 1.62f;
         float scaleFactor = Mathf.Clamp(targetEyeHeight / currentEyeHeight, minimumAvatarScale, maximumAvatarScale);
         transform.localScale = transform.localScale * scaleFactor;
         bodyHeight *= scaleFactor;
@@ -167,7 +166,34 @@ public class AvatarDominanceBehaviorController : MonoBehaviour
     {
         if (headBone != null)
         {
-            return Mathf.Abs(headBone.position.y - transform.position.y);
+            // Measuring from the avatar root is animation-dependent: Tunnel's
+            // walking controller offsets the skeleton root, which made a normal
+            // avatar look only 0.53 m tall and triggered the maximum scale clamp.
+            // Foot and toe bones move with that same animation, so head-to-sole
+            // height stays stable across every scene.
+            Transform[] footBones =
+            {
+                animator != null ? animator.GetBoneTransform(HumanBodyBones.LeftFoot) : null,
+                animator != null ? animator.GetBoneTransform(HumanBodyBones.RightFoot) : null,
+                animator != null ? animator.GetBoneTransform(HumanBodyBones.LeftToes) : null,
+                animator != null ? animator.GetBoneTransform(HumanBodyBones.RightToes) : null
+            };
+
+            float lowestFootBoneY = float.PositiveInfinity;
+            foreach (Transform footBone in footBones)
+            {
+                if (footBone != null)
+                {
+                    lowestFootBoneY = Mathf.Min(lowestFootBoneY, footBone.position.y);
+                }
+            }
+
+            if (!float.IsPositiveInfinity(lowestFootBoneY))
+            {
+                const float rocketboxFootBoneToSole = 0.135f;
+                float soleY = lowestFootBoneY - rocketboxFootBoneToSole;
+                return Mathf.Abs(headBone.position.y - soleY);
+            }
         }
 
         Bounds bounds;

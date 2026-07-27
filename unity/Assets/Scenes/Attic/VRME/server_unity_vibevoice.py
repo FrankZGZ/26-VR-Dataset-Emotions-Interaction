@@ -1103,21 +1103,11 @@ def build_exact_auto_task_briefing(user_text: str, scene_context: str = "") -> s
     task_match = re.search(r"^Task:\s*(.+)$", user_text, re.MULTILINE)
     scene = scene_match.group(1).strip() if scene_match else "this"
     task = task_match.group(1).strip() if task_match else "use the highlighted object with the highlighted target"
-    object_match = re.search(r"^plannedHighlightedObjectHints=(.+)$", scene_context, re.MULTILINE)
-    target_match = re.search(r"^plannedHighlightedTargetHints=(.+)$", scene_context, re.MULTILINE)
-    if not object_match:
-        object_match = re.search(r"^highlightedObjects:\s*\n-\s*([^|]+)", scene_context, re.MULTILINE)
-    if not target_match:
-        target_match = re.search(r"^highlightedTargets:\s*\n-\s*([^|]+)", scene_context, re.MULTILINE)
-
     if task:
         task = task[0].lower() + task[1:]
-    context_hint = ""
-    if object_match or target_match:
-        object_hint = object_match.group(1).strip() if object_match else "the highlighted object"
-        target_hint = target_match.group(1).strip() if target_match else "the highlighted target"
-        context_hint = f" Look for the highlighted object and target: {object_hint} and {target_hint}."
-    return f"You are in the {scene} scene. Task: {task}{context_hint}"
+    # The Unity Task line already contains the exact object and target. Adding
+    # planned/highlighted hints here repeated names in the spoken briefing.
+    return f"You are in the {scene} scene. Task: {task}"
 
 
 def find_latest_wav(output_dir: Path, since: float) -> Path | None:

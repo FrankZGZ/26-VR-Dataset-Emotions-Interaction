@@ -38,6 +38,8 @@ This pack's server then:
 3. Streams speech using ElevenLabs voice `pFZP5JQG7iQjIQuC4Bku` with `eleven_v3`, falling back to `eleven_multilingual_v2` and then Flash only if needed.
 4. Sends PCM audio chunks back to Unity for low-latency playback. If streaming is disabled or fails before audio starts, it falls back to a complete WAV response.
 
+The same server scans for a Polar H10 chest strap through Bluetooth LE. It exposes the latest fresh sample at `http://127.0.0.1:8080/heart-rate` and writes BPM, RR intervals, participant/session, scene, and warm/cold condition to `heart_rate_recordings/HeartRate_<sessionId>.csv`. Put on and activate the strap before starting `run_server.ps1`; the collector reconnects automatically after a disconnect.
+
 ## First-Time Setup
 
 1. Copy `.env.example` to `.env`.

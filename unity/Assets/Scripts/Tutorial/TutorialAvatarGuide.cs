@@ -31,14 +31,27 @@ public class TutorialAvatarGuide : MonoBehaviour
     private GameObject avatarInstance;
     private Transform uiRoot;
     private TMP_Text instructionText;
+    private Vector3 fixedUiPosition;
+    private Quaternion fixedUiRotation;
+    private bool hasFixedUiPose;
     private bool wasPressed;
     private bool isReady;
 
     private IEnumerator Start()
     {
+        DisableControllerTurning();
+
         // ToSetup disables LoginCanvas after the participant ID is submitted.
         while (waitUntilHidden != null && waitUntilHidden.activeInHierarchy)
             yield return null;
+
+        ParticipantRigHeightCalibrator heightCalibrator =
+            FindFirstObjectByType<ParticipantRigHeightCalibrator>();
+        if (heightCalibrator != null)
+        {
+            while (!heightCalibrator.InitialCalibrationCompleted)
+                yield return null;
+        }
 
         if (startDelay > 0f)
             yield return new WaitForSeconds(startDelay);
@@ -58,6 +71,22 @@ public class TutorialAvatarGuide : MonoBehaviour
         isReady = true;
     }
 
+    private static void DisableControllerTurning()
+    {
+        // Controller locomotion contains a 45-degree snap-turn interactor on
+        // each hand. A noisy/resting thumbstick can therefore rotate the whole
+        // rig while the controller is held, making fixed world UI appear to
+        // orbit the participant. Teleport and ray interactors are siblings and
+        // remain enabled.
+        Transform[] sceneTransforms = FindObjectsByType<Transform>(
+            FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (Transform sceneTransform in sceneTransforms)
+        {
+            if (sceneTransform.name == "ControllerTurnerInteractor")
+                sceneTransform.gameObject.SetActive(false);
+        }
+    }
+
     private void Update()
     {
         if (!isReady || instructionText == null)
@@ -74,18 +103,19 @@ public class TutorialAvatarGuide : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (uiRoot == null || avatarInstance == null)
+        if (uiRoot == null)
             return;
 
-        Camera viewer = FindViewerCamera();
-        if (viewer == null)
-            return;
+        // This tutorial panel is world-authored UI. Keep the pose captured at
+        // creation; it must never orbit with, face, or otherwise follow the HMD.
+        if (!hasFixedUiPose)
+        {
+            fixedUiPosition = uiRoot.position;
+            fixedUiRotation = uiRoot.rotation;
+            hasFixedUiPose = true;
+        }
 
-        uiRoot.position = avatarInstance.transform.position + Vector3.up * uiHeightAboveAvatar;
-        Vector3 towardViewer = viewer.transform.position - uiRoot.position;
-        towardViewer.y = 0f;
-        if (towardViewer.sqrMagnitude > 0.001f)
-            uiRoot.rotation = Quaternion.LookRotation(-towardViewer.normalized, Vector3.up);
+        uiRoot.SetPositionAndRotation(fixedUiPosition, fixedUiRotation);
     }
 
     private void SpawnAvatar(Transform viewer)
@@ -144,7 +174,11 @@ public class TutorialAvatarGuide : MonoBehaviour
             "Avatar Push-To-Talk UI", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
         uiRoot = canvasObject.transform;
         uiRoot.position = avatarInstance.transform.position + Vector3.up * uiHeightAboveAvatar;
+        uiRoot.rotation = Quaternion.identity;
         uiRoot.localScale = Vector3.one * 0.0025f;
+        fixedUiPosition = uiRoot.position;
+        fixedUiRotation = uiRoot.rotation;
+        hasFixedUiPose = true;
 
         Canvas canvas = canvasObject.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;

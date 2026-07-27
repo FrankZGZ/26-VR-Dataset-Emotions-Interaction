@@ -8,11 +8,14 @@ using UnityEngine.XR.OpenXR;
 /// <summary>
 /// Recalibrates every immersive scene from the current tracked headset pose so
 /// the virtual eye/floor relationship is consistent. Runtime recenter events
-/// additionally put the tracked head back at the authored horizontal spawn and
-/// align the participant's current look direction with the authored forward.
+/// are applied by OpenXR's reference space; this component detects missed Link
+/// callbacks and then verifies height without applying a second world transform.
 /// </summary>
 public class ParticipantRigHeightCalibrator : MonoBehaviour
 {
+    private const float StandardSceneEyeHeight = 1.62f;
+    private const float TutorialEyeHeight = 1.62f;
+
     public Transform centerEyeAnchor;
     [Tooltip("Desired headset height above the virtual floor after calibration.")]
     public float targetEyeHeight = 1.62f;
@@ -33,17 +36,22 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
     private readonly List<XRInputSubsystem> subscribedInputSubsystems = new List<XRInputSubsystem>();
     private readonly List<XRInputSubsystem> discoveredInputSubsystems = new List<XRInputSubsystem>();
     private bool openXrRecenteringEnabled;
-    private Vector3 authoredRigPosition;
-    private float authoredRigYaw;
-    private bool authoredPoseCaptured;
     private Coroutine sceneRecenterRoutine;
     private float lastSceneRecenterRequestTime = float.NegativeInfinity;
+    private int observedOvrRecenterCount;
+    private bool hasObservedOvrRecenterCount;
+    private Vector3 previousTrackedHeadPosition;
+    private float previousTrackedHeadYaw;
+    private bool hasPreviousTrackedHeadPose;
+    private float trackingStartedAt;
+    private float calibratedRigY;
+    private bool hasCalibratedRigY;
+    private float lastRigYRestoreLogTime = float.NegativeInfinity;
+    public bool InitialCalibrationCompleted { get; private set; }
 
     private void Awake()
     {
-        // This component is installed immediately after the scene loads, before
-        // participant height calibration moves the rig vertically.
-        CaptureAuthoredRigPose();
+        trackingStartedAt = Time.unscaledTime;
     }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -64,12 +72,18 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
         OVRCameraRig[] rigs = Object.FindObjectsByType<OVRCameraRig>(FindObjectsSortMode.None);
         foreach (OVRCameraRig rig in rigs)
         {
-            if (rig != null && rig.isActiveAndEnabled &&
-                rig.GetComponent<ParticipantRigHeightCalibrator>() == null)
+            if (rig == null || !rig.isActiveAndEnabled)
+                continue;
+
+            ParticipantRigHeightCalibrator calibrator =
+                rig.GetComponent<ParticipantRigHeightCalibrator>();
+            if (calibrator == null)
             {
-                rig.gameObject.AddComponent<ParticipantRigHeightCalibrator>();
+                calibrator = rig.gameObject.AddComponent<ParticipantRigHeightCalibrator>();
                 Debug.Log("[VRME] Participant height calibrator attached to " + rig.gameObject.name + ".");
             }
+
+            calibrator.targetEyeHeight = GetTargetEyeHeight(SceneManager.GetActiveScene().name);
         }
     }
 
@@ -105,6 +119,39 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
         if (!openXrRecenteringEnabled || subscribedInputSubsystems.Count == 0)
         {
             TryEnableAndSubscribeOpenXRRecentering();
+        }
+        TryDetectOvrRecenterCounterChange();
+    }
+
+    private void LateUpdate()
+    {
+        DetectTrackingPoseRecenter();
+        PreserveCalibratedRigHeightAfterLocomotion();
+    }
+
+    private void PreserveCalibratedRigHeightAfterLocomotion()
+    {
+        if (!InitialCalibrationCompleted || !hasCalibratedRigY)
+            return;
+
+        float changedBy = transform.position.y - calibratedRigY;
+        if (Mathf.Abs(changedBy) < 0.005f)
+            return;
+
+        // Oculus teleport locomotion correctly changes X/Z, but writes the
+        // destination surface Y onto the OVRCameraRig root. That discards the
+        // participant floor correction and makes every floor object physically
+        // unreachable again. Preserve horizontal locomotion and restore only Y.
+        Vector3 correctedPosition = transform.position;
+        correctedPosition.y = calibratedRigY;
+        transform.position = correctedPosition;
+
+        if (Time.unscaledTime - lastRigYRestoreLogTime > 0.5f)
+        {
+            Debug.Log("[VRME] Restored calibrated rig Y after locomotion. overwrittenY=" +
+                (calibratedRigY + changedBy).ToString("0.000") +
+                ", restoredY=" + calibratedRigY.ToString("0.000") + ".");
+            lastRigYRestoreLogTime = Time.unscaledTime;
         }
     }
 
@@ -203,16 +250,88 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
         RequestSceneRecenter("OpenXR");
     }
 
-    private void CaptureAuthoredRigPose()
+    private void TryDetectOvrRecenterCounterChange()
     {
-        if (authoredPoseCaptured)
+        int recenterCount;
+        try
+        {
+            recenterCount = OVRPlugin.GetLocalTrackingSpaceRecenterCount();
+        }
+        catch
         {
             return;
         }
 
-        authoredRigPosition = transform.position;
-        authoredRigYaw = transform.eulerAngles.y;
-        authoredPoseCaptured = true;
+        if (!hasObservedOvrRecenterCount)
+        {
+            observedOvrRecenterCount = recenterCount;
+            hasObservedOvrRecenterCount = true;
+            return;
+        }
+
+        if (recenterCount == observedOvrRecenterCount)
+        {
+            return;
+        }
+
+        int previousCount = observedOvrRecenterCount;
+        observedOvrRecenterCount = recenterCount;
+        try
+        {
+            // Unity's OpenXR InputSubsystem callback is missed by Link for some
+            // XR_OCULUS_recenter_event events. Regenerate the recenter space
+            // explicitly when Meta's own monotonically increasing count changes.
+            OpenXRSettings.RefreshRecenterSpace();
+        }
+        catch (System.Exception exception)
+        {
+            Debug.LogWarning("[VRME] Could not refresh OpenXR recenter space: " + exception.Message);
+        }
+
+        Debug.Log("[VRME] Meta recenter counter changed " + previousCount + " -> " + recenterCount + ".");
+        RequestSceneRecenter("Meta recenter counter");
+    }
+
+    private void DetectTrackingPoseRecenter()
+    {
+        if (centerEyeAnchor == null)
+        {
+            OVRCameraRig rig = GetComponent<OVRCameraRig>();
+            centerEyeAnchor = rig != null ? rig.centerEyeAnchor : transform.Find("TrackingSpace/CenterEyeAnchor");
+        }
+        if (centerEyeAnchor == null)
+        {
+            return;
+        }
+
+        Vector3 trackedPosition = transform.InverseTransformPoint(centerEyeAnchor.position);
+        Vector3 trackedForward = transform.InverseTransformDirection(centerEyeAnchor.forward);
+        trackedForward = Vector3.ProjectOnPlane(trackedForward, Vector3.up);
+        float trackedYaw = trackedForward.sqrMagnitude > 0.0001f
+            ? Quaternion.LookRotation(trackedForward.normalized, Vector3.up).eulerAngles.y
+            : previousTrackedHeadYaw;
+
+        if (hasPreviousTrackedHeadPose && Time.unscaledTime - trackingStartedAt > 2f)
+        {
+            float horizontalJump = Vector2.Distance(
+                new Vector2(previousTrackedHeadPosition.x, previousTrackedHeadPosition.z),
+                new Vector2(trackedPosition.x, trackedPosition.z));
+            float yawJump = Mathf.Abs(Mathf.DeltaAngle(previousTrackedHeadYaw, trackedYaw));
+
+            // A person cannot move this far between rendered frames. These
+            // discontinuities are the reliable fallback when Link logs the
+            // Oculus recenter event but omits trackingOriginUpdated.
+            if (horizontalJump > 0.18f || yawJump > 50f)
+            {
+                Debug.Log("[VRME] Tracking-pose recenter detected. horizontalJump=" +
+                    horizontalJump.ToString("0.00") + "m, yawJump=" + yawJump.ToString("0.0") + "deg.");
+                RequestSceneRecenter("tracking-pose reset");
+            }
+        }
+
+        previousTrackedHeadPosition = trackedPosition;
+        previousTrackedHeadYaw = trackedYaw;
+        hasPreviousTrackedHeadPose = true;
     }
 
     private void RequestSceneRecenter(string source)
@@ -239,8 +358,6 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
 
     private IEnumerator ApplySceneRecenter(string source)
     {
-        CaptureAuthoredRigPose();
-
         // Let OpenXR finish updating the tracking origin before reading the
         // CenterEyeAnchor. Reading it inside the callback gives the old pose.
         yield return null;
@@ -259,28 +376,19 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
             yield break;
         }
 
+        // OpenXR already changed the reference space, which is the safe way to
+        // make the whole virtual world recenter around a room-scale participant.
+        // Applying another transform here cancels that visible change. Rotating
+        // scene roots also breaks Unity Terrain detail/grass rendering.
         Vector3 horizontalForward = Vector3.ProjectOnPlane(centerEyeAnchor.forward, Vector3.up);
-        if (horizontalForward.sqrMagnitude > 0.0001f)
-        {
-            float trackedHeadYaw = Quaternion.LookRotation(horizontalForward.normalized, Vector3.up).eulerAngles.y;
-            float yawCorrection = Mathf.DeltaAngle(trackedHeadYaw, authoredRigYaw);
-            transform.RotateAround(centerEyeAnchor.position, Vector3.up, yawCorrection);
-        }
-
-        // Re-read the head after rotating around it, then put it exactly at the
-        // scene's authored X/Z start. Height remains the calibrator's concern.
-        Vector3 headPosition = centerEyeAnchor.position;
-        transform.position += new Vector3(
-            authoredRigPosition.x - headPosition.x,
-            0f,
-            authoredRigPosition.z - headPosition.z);
-
-        Debug.Log("[VRME] Scene recentered from " + source +
+        float headYaw = horizontalForward.sqrMagnitude > 0.0001f
+            ? Quaternion.LookRotation(horizontalForward.normalized, Vector3.up).eulerAngles.y
+            : centerEyeAnchor.eulerAngles.y;
+        Debug.Log("[VRME] Native OpenXR whole-world recenter accepted from " + source +
             ". headXZ=(" + centerEyeAnchor.position.x.ToString("0.00") + "," +
-            centerEyeAnchor.position.z.ToString("0.00") + "), targetXZ=(" +
-            authoredRigPosition.x.ToString("0.00") + "," + authoredRigPosition.z.ToString("0.00") +
-            "), headYaw=" + centerEyeAnchor.eulerAngles.y.ToString("0.0") +
-            ", targetYaw=" + authoredRigYaw.ToString("0.0") + ".");
+            centerEyeAnchor.position.z.ToString("0.00") + "), headYaw=" +
+            headYaw.ToString("0.0") +
+            ". No second scene transform was applied; Terrain and grass remain fixed.");
 
         sceneRecenterRoutine = null;
         RequestCalibration(SceneManager.GetActiveScene());
@@ -298,14 +406,21 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
             StopCoroutine(calibrationRoutine);
         }
 
+        InitialCalibrationCompleted = false;
         calibrationRoutine = StartCoroutine(CalibrateForScene(scene.name));
+    }
+
+    private void FinishCalibration()
+    {
+        calibrationRoutine = null;
+        InitialCalibrationCompleted = true;
     }
 
     private IEnumerator CalibrateForScene(string sceneName)
     {
         if (!ShouldCalibrateScene(sceneName))
         {
-            calibrationRoutine = null;
+            FinishCalibration();
             yield break;
         }
 
@@ -324,7 +439,7 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
         {
             Debug.LogWarning("[VRME] Participant height calibration skipped in " + sceneName +
                 ": CenterEyeAnchor not found.");
-            calibrationRoutine = null;
+            FinishCalibration();
             yield break;
         }
 
@@ -360,7 +475,7 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
         {
             Debug.LogWarning("[VRME] Participant height calibration skipped in " + sceneName +
                 ": tracking or floor was unavailable.");
-            calibrationRoutine = null;
+            FinishCalibration();
             yield break;
         }
 
@@ -374,7 +489,9 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
             Debug.Log("[VRME] Participant rig height already matches the global scene eye height in " + sceneName +
                 ". measured=" + measuredHeight.ToString("0.00") + "m, target=" +
                 targetEyeHeight.ToString("0.00") + "m, no vertical correction applied.");
-            calibrationRoutine = null;
+            calibratedRigY = transform.position.y;
+            hasCalibratedRigY = true;
+            FinishCalibration();
             yield break;
         }
 
@@ -382,6 +499,8 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
             ? Mathf.Max(requiredCorrection, -maximumDownwardCorrection)
             : Mathf.Min(requiredCorrection, maximumUpwardCorrection);
         transform.position += Vector3.up * correction;
+        calibratedRigY = transform.position.y;
+        hasCalibratedRigY = true;
         yield return null;
 
         float resultingHeight = centerEyeAnchor.position.y - floorY;
@@ -390,7 +509,7 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
             ", measured=" + measuredHeight.ToString("0.00") + "m, target=" +
             targetEyeHeight.ToString("0.00") + "m, correctionY=" + correction.ToString("0.00") +
             "m, resultingHeight=" + resultingHeight.ToString("0.00") + "m.");
-        calibrationRoutine = null;
+        FinishCalibration();
     }
 
     private bool TryResolveFloorY(out float floorY)
@@ -462,5 +581,12 @@ public class ParticipantRigHeightCalibrator : MonoBehaviour
                string.Equals(sceneName, "SolitaryConfinement", System.StringComparison.OrdinalIgnoreCase) ||
                string.Equals(sceneName, "Tunnel", System.StringComparison.OrdinalIgnoreCase) ||
                string.Equals(sceneName, "Elephant", System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static float GetTargetEyeHeight(string sceneName)
+    {
+        return string.Equals(sceneName, "Tutorial_Interaction", System.StringComparison.OrdinalIgnoreCase)
+            ? TutorialEyeHeight
+            : StandardSceneEyeHeight;
     }
 }
