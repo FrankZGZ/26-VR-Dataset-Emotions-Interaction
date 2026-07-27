@@ -973,6 +973,10 @@ async def generate_reply(
 ) -> str:
     global script_index
 
+    if "[SYSTEM_ATTENTION_REMINDER]" in user_text:
+        log("[ATTENTION_REMINDER] Returning deterministic reminder without an LLM call.")
+        return "Hey, I'm here."
+
     auto_briefing = build_exact_auto_task_briefing(user_text, scene_context, avatar_condition)
     if auto_briefing:
         log(f"[AUTO_BRIEFING] Exact task intro from scene context. context_chars={len(scene_context or '')}, reply={auto_briefing}")
