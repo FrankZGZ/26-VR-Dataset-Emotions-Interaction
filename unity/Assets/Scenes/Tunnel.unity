@@ -11624,7 +11624,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 07524b858ed4b1e418381f03f48d4d41, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  countdownTimerSeconds: 30
+  countdownTimerSeconds: 60
   doorObject: {fileID: 1452613708}
   skipSurvey: 0
   requiredInteractables: []

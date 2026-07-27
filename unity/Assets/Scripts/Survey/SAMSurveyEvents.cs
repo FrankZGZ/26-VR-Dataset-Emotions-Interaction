@@ -45,8 +45,17 @@ public class SAMSurveyEvents : MonoBehaviour
     private Button samOverlaySubmitButton;
     private Button[] likertChoiceButtons;
     private Button likertSubmitButton;
-    private readonly float[] likertQuestionValues = new float[] { 4f, 4f, 4f, 4f };
-    private readonly string[] likertQuestionLabels = new string[]
+    private readonly float[] avatarPerceptionValues = new float[5];
+    private readonly string[] avatarPerceptionLabels = new string[]
+    {
+        "The avatar was friendly.",
+        "The avatar was sincere.",
+        "The avatar was good-natured.",
+        "The avatar appeared dominant.",
+        "The avatar was capable."
+    };
+    private readonly float[] asaqQuestionValues = new float[4];
+    private readonly string[] asaqQuestionLabels = new string[]
     {
         "The emotions I felt during the interaction were caused by the agent.",
         "The agent had a distinctive character.",
@@ -56,6 +65,7 @@ public class SAMSurveyEvents : MonoBehaviour
     private readonly List<GameObject> samPageChildren = new List<GameObject>();
     private bool isSubmitting;
     private bool likertPageVisible;
+    private bool showingAvatarPerceptionPage = true;
     private bool hiddenOnSceneStart;
 
     private void Awake()
@@ -192,15 +202,57 @@ public class SAMSurveyEvents : MonoBehaviour
         Debug.Log("[Survey] Likert submit requested.");
         isSubmitting = true;
 
+        foreach (float answer in CurrentLikertValues())
+        {
+            if (answer < 1f || answer > 7f)
+            {
+                isSubmitting = false;
+                if (debugInfo != null) debugInfo.text = "Please answer every question before continuing.";
+                Debug.LogWarning("[Survey] Likert submit blocked because at least one item is unanswered.");
+                yield break;
+            }
+        }
+
+        if (showingAvatarPerceptionPage)
+        {
+            EmotionSurveySingle perceptionRecord = BuildBaseSurveyRecord("avatar_perception_v1");
+            perceptionRecord.valenceValue = -1f;
+            perceptionRecord.arousalValue = -1f;
+            perceptionRecord.dominanceValue = -1f;
+            SetLikertFields(perceptionRecord, -1f);
+            perceptionRecord.avatarFriendlyValue = avatarPerceptionValues[0];
+            perceptionRecord.avatarSincereValue = avatarPerceptionValues[1];
+            perceptionRecord.avatarGoodNaturedValue = avatarPerceptionValues[2];
+            perceptionRecord.avatarDominantValue = avatarPerceptionValues[3];
+            perceptionRecord.avatarCapableValue = avatarPerceptionValues[4];
+
+            string perceptionTime = System.DateTime.Now.ToString("dd-MMM_HH-mm-ss");
+            bool perceptionSaved = SaveSurveyDataToFile(
+                JsonUtility.ToJson(perceptionRecord), perceptionRecord.participantId,
+                perceptionRecord.sceneName, perceptionTime, "AvatarPerceptionSurvey");
+            yield return new WaitForSeconds(0.25f);
+            if (!perceptionSaved)
+            {
+                isSubmitting = false;
+                debugInfo.text = "[Error] Could not save avatar perception data.";
+                yield break;
+            }
+
+            Debug.Log("[Survey] Avatar perception saved. Moving to ASAQ page.");
+            ShowAsaqPage();
+            isSubmitting = false;
+            yield break;
+        }
+
         EmotionSurveySingle surveySingle = BuildBaseSurveyRecord("avatar_asaq_short_v1");
         surveySingle.valenceValue = -1f;
         surveySingle.arousalValue = -1f;
         surveySingle.dominanceValue = -1f;
         SetLikertFields(surveySingle, -1f);
-        surveySingle.asaqUserEmotionPresenceValue = likertQuestionValues[0];
-        surveySingle.asaqAgentPersonalityPresenceValue = likertQuestionValues[1];
-        surveySingle.asaqAgentIntentionalityValue = likertQuestionValues[2];
-        surveySingle.asaqSocialPresenceValue = likertQuestionValues[3];
+        surveySingle.asaqUserEmotionPresenceValue = asaqQuestionValues[0];
+        surveySingle.asaqAgentPersonalityPresenceValue = asaqQuestionValues[1];
+        surveySingle.asaqAgentIntentionalityValue = asaqQuestionValues[2];
+        surveySingle.asaqSocialPresenceValue = asaqQuestionValues[3];
         surveySingle.socialPresenceValue = surveySingle.asaqSocialPresenceValue;
 
         string timeStr = System.DateTime.Now.ToString("dd-MMM_HH-mm-ss");
@@ -248,6 +300,11 @@ public class SAMSurveyEvents : MonoBehaviour
         surveySingle.guidanceClarityValue = value;
         surveySingle.attentionAccuracyValue = value;
         surveySingle.conversationNaturalnessValue = value;
+        surveySingle.avatarFriendlyValue = value;
+        surveySingle.avatarSincereValue = value;
+        surveySingle.avatarGoodNaturedValue = value;
+        surveySingle.avatarDominantValue = value;
+        surveySingle.avatarCapableValue = value;
         surveySingle.asaqUserEmotionPresenceValue = value;
         surveySingle.asaqAgentPersonalityPresenceValue = value;
         surveySingle.asaqAgentIntentionalityValue = value;
@@ -304,6 +361,7 @@ public class SAMSurveyEvents : MonoBehaviour
 
     private void ShowLikertPage()
     {
+        showingAvatarPerceptionPage = true;
         likertPageVisible = true;
         MoveSurveyInFrontOfCamera();
         if (positionQuestionnaireInFrontOfCamera)
@@ -333,6 +391,24 @@ public class SAMSurveyEvents : MonoBehaviour
         {
             debugInfo.text = "";
         }
+    }
+
+    private void ShowAsaqPage()
+    {
+        showingAvatarPerceptionPage = false;
+        if (likertPanel != null)
+        {
+            likertPanel.SetActive(false);
+            Destroy(likertPanel);
+            likertPanel = null;
+        }
+        CreateLikertPageIfNeeded();
+        if (likertPanel != null)
+        {
+            likertPanel.SetActive(true);
+            likertPanel.transform.SetAsLastSibling();
+        }
+        if (debugInfo != null) debugInfo.text = "";
     }
 
     private void CacheSamPageChildren()
@@ -618,7 +694,9 @@ public class SAMSurveyEvents : MonoBehaviour
 
         float contentYOffset = 24f;
 
-        Text title = CreateText(likertPanel.transform, font, "Avatar experience", new Vector2(38f, -22f + contentYOffset), new Vector2(520f, 38f), TextAnchor.MiddleLeft, 27);
+        string[] currentLabels = CurrentLikertLabels();
+        string pageTitle = showingAvatarPerceptionPage ? "Avatar perception" : "Agent Social Attribution Questionnaire (ASAQ)";
+        Text title = CreateText(likertPanel.transform, font, pageTitle, new Vector2(38f, -22f + contentYOffset), new Vector2(760f, 38f), TextAnchor.MiddleLeft, 27);
         title.color = Color.black;
         Text instruction = CreateText(likertPanel.transform, font, "Select one score for each item. 1 = strongly disagree, 7 = strongly agree.", new Vector2(38f, -58f + contentYOffset), new Vector2(860f, 28f), TextAnchor.MiddleLeft, 16);
         instruction.color = Color.black;
@@ -636,11 +714,11 @@ public class SAMSurveyEvents : MonoBehaviour
         Text highText = CreateText(likertPanel.transform, font, "Agree", new Vector2(firstChoiceX + choiceSpacing * 6f + 58f, headerY + contentYOffset), new Vector2(64f, 24f), TextAnchor.MiddleCenter, 13);
         highText.color = Color.black;
 
-        likertChoiceButtons = new Button[likertQuestionLabels.Length * 7];
-        for (int questionIndex = 0; questionIndex < likertQuestionLabels.Length; questionIndex++)
+        likertChoiceButtons = new Button[currentLabels.Length * 7];
+        for (int questionIndex = 0; questionIndex < currentLabels.Length; questionIndex++)
         {
             float rowY = rowStartY - rowSpacing * questionIndex + contentYOffset;
-            Text label = CreateText(likertPanel.transform, font, likertQuestionLabels[questionIndex], new Vector2(labelX, rowY + 6f), new Vector2(430f, 62f), TextAnchor.MiddleLeft, 15);
+            Text label = CreateText(likertPanel.transform, font, currentLabels[questionIndex], new Vector2(labelX, rowY + 6f), new Vector2(430f, 62f), TextAnchor.MiddleLeft, 15);
             label.color = Color.black;
 
             for (int valueIndex = 0; valueIndex < 7; valueIndex++)
@@ -657,7 +735,7 @@ public class SAMSurveyEvents : MonoBehaviour
             }
         }
 
-        likertSubmitButton = CreateButton(likertPanel.transform, font, "Submit", new Vector2(360f, -540f + contentYOffset), new Vector2(280f, 58f));
+        likertSubmitButton = CreateButton(likertPanel.transform, font, showingAvatarPerceptionPage ? "NEXT TO ASAQ" : "SUBMIT", new Vector2(360f, -590f + contentYOffset), new Vector2(280f, 58f));
         AddLikertHitArea(likertSubmitButton.gameObject, -1, -1, true);
         likertSubmitButton.onClick.AddListener(delegate { StartCoroutine(SubmitLikertPage()); });
 
@@ -667,12 +745,13 @@ public class SAMSurveyEvents : MonoBehaviour
 
     private void SetLikertAnswer(int questionIndex, int value)
     {
-        if (questionIndex < 0 || questionIndex >= likertQuestionValues.Length)
+        float[] currentValues = CurrentLikertValues();
+        if (questionIndex < 0 || questionIndex >= currentValues.Length)
         {
             return;
         }
 
-        likertQuestionValues[questionIndex] = value;
+        currentValues[questionIndex] = value;
         Debug.Log("[Survey] Likert answer selected. question=" + (questionIndex + 1) + ", value=" + value);
         UpdateLikertTable();
     }
@@ -727,7 +806,8 @@ public class SAMSurveyEvents : MonoBehaviour
             return;
         }
 
-        for (int questionIndex = 0; questionIndex < likertQuestionLabels.Length; questionIndex++)
+        float[] currentValues = CurrentLikertValues();
+        for (int questionIndex = 0; questionIndex < currentValues.Length; questionIndex++)
         {
             for (int valueIndex = 0; valueIndex < 7; valueIndex++)
             {
@@ -735,12 +815,22 @@ public class SAMSurveyEvents : MonoBehaviour
                 Image image = likertChoiceButtons[buttonIndex] != null ? likertChoiceButtons[buttonIndex].GetComponent<Image>() : null;
                 if (image != null)
                 {
-                    bool selected = Mathf.Approximately(likertQuestionValues[questionIndex], valueIndex + 1);
+                    bool selected = Mathf.Approximately(currentValues[questionIndex], valueIndex + 1);
                     image.color = selected ? new Color(0.05f, 0.55f, 0.25f, 1f) : new Color(0.9f, 0.9f, 0.9f, 1f);
                     SetButtonTextColor(likertChoiceButtons[buttonIndex], selected ? Color.white : Color.black);
                 }
             }
         }
+    }
+
+    private string[] CurrentLikertLabels()
+    {
+        return showingAvatarPerceptionPage ? avatarPerceptionLabels : asaqQuestionLabels;
+    }
+
+    private float[] CurrentLikertValues()
+    {
+        return showingAvatarPerceptionPage ? avatarPerceptionValues : asaqQuestionValues;
     }
 
     private void CreateSamOverlaySubmitIfNeeded()

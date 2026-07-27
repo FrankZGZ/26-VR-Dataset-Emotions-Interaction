@@ -112,6 +112,15 @@ public class SurveyEvents : MonoBehaviour
         surveySingle.guidanceClarityValue = -1f;
         surveySingle.attentionAccuracyValue = -1f;
         surveySingle.conversationNaturalnessValue = -1f;
+        surveySingle.avatarFriendlyValue = -1f;
+        surveySingle.avatarSincereValue = -1f;
+        surveySingle.avatarGoodNaturedValue = -1f;
+        surveySingle.avatarDominantValue = -1f;
+        surveySingle.avatarCapableValue = -1f;
+        surveySingle.asaqUserEmotionPresenceValue = -1f;
+        surveySingle.asaqAgentPersonalityPresenceValue = -1f;
+        surveySingle.asaqAgentIntentionalityValue = -1f;
+        surveySingle.asaqSocialPresenceValue = -1f;
 
         // Serialization. 
         var surveyDataSingle = JsonUtility.ToJson(surveySingle);

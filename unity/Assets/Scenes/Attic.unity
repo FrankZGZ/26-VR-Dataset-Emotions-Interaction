@@ -21053,7 +21053,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 07524b858ed4b1e418381f03f48d4d41, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  countdownTimerSeconds: 30
+  countdownTimerSeconds: 60
   doorObject: {fileID: 1973309251}
   skipSurvey: 0
   requiredInteractables: []
@@ -77852,6 +77852,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1ee65a76ff79c8f479f48c370bf9275a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  additionalManDelaySeconds: 10
   startWalkingTime: 20
   man: {fileID: 118544362}
   manCreaming: {fileID: 259126476}

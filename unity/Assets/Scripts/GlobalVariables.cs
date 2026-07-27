@@ -87,6 +87,11 @@ public class EmotionSurveySingle
     public float guidanceClarityValue;
     public float attentionAccuracyValue;
     public float conversationNaturalnessValue;
+    public float avatarFriendlyValue;
+    public float avatarSincereValue;
+    public float avatarGoodNaturedValue;
+    public float avatarDominantValue;
+    public float avatarCapableValue;
     public float asaqUserEmotionPresenceValue;
     public float asaqAgentPersonalityPresenceValue;
     public float asaqAgentIntentionalityValue;

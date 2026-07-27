@@ -42,7 +42,7 @@ public class MySceneLoader : MonoBehaviour
     private bool isLoadingRealScene = false;
     
     // Real scene auto-switching variables
-    public const float RealSceneWaitTimeSeconds = 20f;
+    public const float RealSceneWaitTimeSeconds = 60f;
     private Coroutine autoSwitchCoroutine; // Auto-switch coroutine reference
 
     private const int totalParticipants = 85;
@@ -400,7 +400,7 @@ public class MySceneLoader : MonoBehaviour
         }
     }
     
-    // Real is a fixed 20-second baseline, independent of stale scene overrides.
+    // Real is a fixed 60-second baseline, independent of stale scene overrides.
     private IEnumerator AutoSwitchAfterDelay()
     {
         Debug.Log($"[SceneFlow] Real baseline started; advancing in {RealSceneWaitTimeSeconds:0.##} seconds.");

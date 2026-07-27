@@ -319,6 +319,7 @@ MonoBehaviour:
   requireAvatarAttentionBeforeAutoIntro: 1
   autoIntroAttentionWindowSeconds: 2
   autoIntroRequiredAvatarAttentionSeconds: 1.5
+  autoIntroMaximumAttentionWaitSeconds: 5
   enableAutoIntroAttentionReminder: 1
   autoIntroAttentionReminderDelaySeconds: 30
   textPromptReplyTimeoutSeconds: 60

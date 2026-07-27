@@ -57,6 +57,8 @@ public class VrmeAtticClient : MonoBehaviour
     public bool requireAvatarAttentionBeforeAutoIntro = true;
     [Range(0.5f, 5f)] public float autoIntroAttentionWindowSeconds = 2f;
     [Range(0.1f, 5f)] public float autoIntroRequiredAvatarAttentionSeconds = 1.5f;
+    [Tooltip("After the formal-scene 10-second setup period, wait at most this much longer for avatar attention before starting anyway.")]
+    [Range(0f, 15f)] public float autoIntroMaximumAttentionWaitSeconds = 5f;
     [Tooltip("If the participant has not satisfied the avatar-attention gate by this scene age, speak one short location reminder without revealing the task.")]
     public bool enableAutoIntroAttentionReminder = true;
     [Range(10f, 120f)] public float autoIntroAttentionReminderDelaySeconds = 30f;
@@ -726,7 +728,11 @@ public class VrmeAtticClient : MonoBehaviour
             await Task.Delay(TimeSpan.FromSeconds(tutorialDelay));
         }
 
-        float minimumSceneAge = Mathf.Max(0f, autoIntroDelaySeconds + Mathf.Max(0f, fallbackGraceSeconds));
+        // Tutorial starts shortly after its participant-ID UI closes. The six
+        // formal scenes retain their authored 10-second setup period.
+        float minimumSceneAge = isTutorial
+            ? 0f
+            : Mathf.Max(0f, autoIntroDelaySeconds + Mathf.Max(0f, fallbackGraceSeconds));
         float remainingSceneDelay = Mathf.Max(0f, minimumSceneAge - (Time.realtimeSinceStartup - sceneStartedAtRealtime));
         Debug.Log("[VRME] Auto briefing fallback armed. minimumSceneAge=" + minimumSceneAge +
             ", remainingDelay=" + remainingSceneDelay +
@@ -740,7 +746,7 @@ public class VrmeAtticClient : MonoBehaviour
             await Task.Delay(TimeSpan.FromSeconds(remainingSceneDelay));
         }
 
-        if (!await WaitForAvatarAttentionBeforeAutoIntroAsync())
+        if (!isTutorial && !await WaitForAvatarAttentionBeforeAutoIntroAsync())
         {
             return;
         }
@@ -827,6 +833,8 @@ public class VrmeAtticClient : MonoBehaviour
             windowSeconds.ToString("0.0") + "s.");
         float nextReminderAttemptAt = sceneStartedAtRealtime +
             Mathf.Max(10f, autoIntroAttentionReminderDelaySeconds);
+        float attentionWaitDeadline = Time.realtimeSinceStartup +
+            Mathf.Max(0f, autoIntroMaximumAttentionWaitSeconds);
 
         while (!autoIntroSent && isActiveAndEnabled &&
                lifetimeCancellation != null && !lifetimeCancellation.IsCancellationRequested)
@@ -841,6 +849,12 @@ public class VrmeAtticClient : MonoBehaviour
                     accumulatedSeconds.ToString("0.0") +
                     ", windowSeconds=" + windowSeconds.ToString("0.0") +
                     ", hitSamples=" + hitSampleCount + ".");
+                return true;
+            }
+
+            if (Time.realtimeSinceStartup >= attentionWaitDeadline)
+            {
+                Debug.Log("[VRME] Avatar-attention grace period expired; starting the formal-scene briefing.");
                 return true;
             }
 
