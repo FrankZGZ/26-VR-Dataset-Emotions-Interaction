@@ -26,6 +26,12 @@ Add `ParticipantRigHeightCalibrator` to the XR origin when participant eye heigh
 - The voice backend defaults to `ws://127.0.0.1:8080/`; change `VrmeAtticClient.serverUrl` on the prefab instance when the backend runs elsewhere.
 - Set `PlayerData.avatarCondition` to `warm`, `cold`, or `backend`. Leaving it as `backend` lets the server choose the condition.
 
+## Experimental counterbalance and heart rate
+
+- The six experimental scenes use `AvatarConditionCounterbalance`: each participant receives three warm and three cold scenes; adjacent numeric participant IDs receive complementary assignments. `Tutorial_Interaction`, `Real`, and `EndScene` are excluded.
+- The complete assignment is exported once per session under `Application.persistentDataPath/CounterbalanceData/<participantId>/AvatarConditionAssignment_<sessionId>.json`. Survey and camera-pose exports also retain the active `avatarCondition` per scene.
+- `BackendHeartRateClient` polls `http://127.0.0.1:8080/heart-rate`. Fresh Polar H10 samples replace the old unavailable/zero entries in `CameraPoseSender.heartRateSamples`; disconnects remain explicit rather than carrying the last BPM forward.
+
 ## Migration boundary
 
 The package intentionally contains no `.unity` files. Scene geometry, teleport visuals, cubes, and authored scene placement remain outside this migration.

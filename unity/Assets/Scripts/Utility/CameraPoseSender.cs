@@ -13,6 +13,37 @@ public class CameraPoseSender : MonoBehaviour
     public static string LatestVoiceAttentionSummary = "currentAttention=unknown";
     public static bool VoiceSamplingActive { get; private set; }
 
+    public static bool TryGetRecentAvatarAttention(
+        float windowSeconds,
+        float requiredDwellSeconds,
+        out float accumulatedDwellSeconds,
+        out int hitSampleCount)
+    {
+        accumulatedDwellSeconds = 0f;
+        hitSampleCount = 0;
+        float clampedWindow = Mathf.Max(recordInterval, windowSeconds);
+        float now = Time.unscaledTime;
+        CameraPoseSender[] senders = FindObjectsByType<CameraPoseSender>(FindObjectsSortMode.None);
+        foreach (CameraPoseSender sender in senders)
+        {
+            if (sender == null || !sender.isActiveAndEnabled)
+            {
+                continue;
+            }
+
+            sender.PruneRecentAvatarAttentionSamples(now, clampedWindow);
+            int senderHitCount = sender.recentAvatarAttentionHitTimes.Count;
+            if (senderHitCount > hitSampleCount)
+            {
+                hitSampleCount = senderHitCount;
+                accumulatedDwellSeconds = senderHitCount * recordInterval;
+            }
+        }
+
+        accumulatedDwellSeconds = Mathf.Min(clampedWindow, accumulatedDwellSeconds);
+        return accumulatedDwellSeconds + 0.0001f >= Mathf.Max(0f, requiredDwellSeconds);
+    }
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetVoiceContextForPlaySession()
     {
@@ -253,6 +284,7 @@ public class CameraPoseSender : MonoBehaviour
     private int voiceWindowPoseStartIndex;
     private int voiceWindowGazeStartIndex;
     private float voiceWindowStartedAtRealtime;
+    private readonly Queue<float> recentAvatarAttentionHitTimes = new Queue<float>();
 
     public static void BeginVoiceSampling()
     {
@@ -286,6 +318,7 @@ public class CameraPoseSender : MonoBehaviour
     private void Start()
     {
         ClearLatestVoiceContext();
+        BackendHeartRateClient.EnsureRunning();
         string participantId = PlayerData.participantId;
         localDirectoryPath = Path.Combine(Application.persistentDataPath, "CameraPoseData", participantId);
         if (!Directory.Exists(localDirectoryPath))
@@ -487,8 +520,27 @@ public class CameraPoseSender : MonoBehaviour
             UpdateGazeObjectHit(sample);
         }
 
+        float now = Time.unscaledTime;
+        if (sample.hitInteractionObject && sample.attentionOnly)
+        {
+            recentAvatarAttentionHitTimes.Enqueue(now);
+        }
+        // Keep enough history for the largest supported proactive-intro
+        // attention window. The query method trims it to the configured size.
+        PruneRecentAvatarAttentionSamples(now, 5f);
+
         bufferedGazeSamples.Add(sample);
         latestGazeSample = sample;
+    }
+
+    private void PruneRecentAvatarAttentionSamples(float now, float windowSeconds)
+    {
+        float cutoff = now - Mathf.Max(recordInterval, windowSeconds);
+        while (recentAvatarAttentionHitTimes.Count > 0 &&
+               recentAvatarAttentionHitTimes.Peek() < cutoff)
+        {
+            recentAvatarAttentionHitTimes.Dequeue();
+        }
     }
 
     private GazeSample BuildCurrentGazeSample()
@@ -2203,10 +2255,12 @@ public class CameraPoseSender : MonoBehaviour
 
         bufferedHeartRateSamples.Add(new HeartRateSample
         {
-            timestamp = System.DateTime.UtcNow.ToString("o"),
-            available = false,
-            bpm = 0f,
-            source = "No heart-rate sensor connected"
+            timestamp = string.IsNullOrWhiteSpace(BackendHeartRateClient.SensorTimestampUtc)
+                ? System.DateTime.UtcNow.ToString("o")
+                : BackendHeartRateClient.SensorTimestampUtc,
+            available = BackendHeartRateClient.Available,
+            bpm = BackendHeartRateClient.Bpm,
+            source = BackendHeartRateClient.Source
         });
     }
 

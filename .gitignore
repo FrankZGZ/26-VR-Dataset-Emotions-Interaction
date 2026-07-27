@@ -119,3 +119,6 @@ InitTestScene*.unity*
 
 # Temp Assembly
 TempAssembly.dll
+
+# Generated artifact inspection reports (keep the source PPTX, not QA traces).
+/outputs/*.inspect.ndjson

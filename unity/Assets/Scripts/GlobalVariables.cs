@@ -21,6 +21,7 @@ public static class PlayerData
     public static string avatarCondition { get; set; }
     public static string[] sceneSequence { get; set; }
     public static int currentSceneIndex { get; set; }
+    public static string counterbalanceScheme { get; set; }
 
     // static contrsuctor.
     static PlayerData()
@@ -29,6 +30,7 @@ public static class PlayerData
         loginId = "-1";
         sessionId = System.Guid.NewGuid().ToString("N");
         avatarCondition = "unset";
+        counterbalanceScheme = "warm-cold-v1";
         sceneSequence = new string[1] { "Test" };
         currentSceneIndex = 0;
     }

@@ -53,6 +53,13 @@ public class VrmeAtticClient : MonoBehaviour
     [Range(0f, 60f)] public float autoIntroDelaySeconds = 10f;
     [Tooltip("Tutorial-only delay after the participant has completed the first UI.")]
     [Range(0f, 5f)] public float tutorialIntroDelayAfterFirstUi = 0.75f;
+    [Tooltip("Require sustained attention toward the avatar before it proactively starts the task briefing.")]
+    public bool requireAvatarAttentionBeforeAutoIntro = true;
+    [Range(0.5f, 5f)] public float autoIntroAttentionWindowSeconds = 2f;
+    [Range(0.1f, 5f)] public float autoIntroRequiredAvatarAttentionSeconds = 1.5f;
+    [Tooltip("If the participant has not satisfied the avatar-attention gate by this scene age, speak one short location reminder without revealing the task.")]
+    public bool enableAutoIntroAttentionReminder = true;
+    [Range(10f, 120f)] public float autoIntroAttentionReminderDelaySeconds = 30f;
     [Range(5f, 120f)] public float textPromptReplyTimeoutSeconds = 60f;
     [TextArea(3, 8)] public string autoIntroPrompt =
         "Please give the participant a brief task briefing for the current VR scene. State the avatar's purpose and the single interaction task they should try before free exploration.";
@@ -76,11 +83,13 @@ public class VrmeAtticClient : MonoBehaviour
     private bool isReceivingBackendProactiveIntro;
     private bool recordKeyWasDown;
     private bool autoIntroSent;
+    private bool autoIntroAttentionReminderSent;
     private bool taskHighlightsActivated;
     private bool guidedTaskActive;
     private bool guidedTaskCompleted;
     private DateTime guidedTaskActivatedAtUtc = DateTime.MinValue;
     private CancellationTokenSource lifetimeCancellation;
+    private float sceneStartedAtRealtime;
     private SceneTaskHighlightSpec activeGuidedTaskSpec;
     private readonly List<GameObject> activeGuidedTaskObjects = new List<GameObject>();
     private readonly List<GameObject> activeGuidedTaskTargets = new List<GameObject>();
@@ -118,7 +127,15 @@ public class VrmeAtticClient : MonoBehaviour
 
     private void Start()
     {
+        sceneStartedAtRealtime = Time.realtimeSinceStartup;
         lifetimeCancellation = new CancellationTokenSource();
+        AvatarConditionCounterbalance.ApplyForActiveScene();
+        BackendHeartRateClient.EnsureRunning(serverUrl);
+        if (requireAvatarAttentionBeforeAutoIntro && useBackendProactiveIntro)
+        {
+            Debug.LogWarning("[VRME] Backend-push proactive intro was disabled because the avatar-attention gate must run in Unity before any briefing request.");
+            useBackendProactiveIntro = false;
+        }
         audioSource = playbackAudioSource != null ? playbackAudioSource : GetComponent<AudioSource>();
         if (audioSource == null)
         {
@@ -703,12 +720,31 @@ public class VrmeAtticClient : MonoBehaviour
             await WaitForTutorialFirstUiAsync();
         }
 
-        float sceneDelay = isTutorial ? tutorialIntroDelayAfterFirstUi : autoIntroDelaySeconds;
-        float delaySeconds = Mathf.Max(0f, sceneDelay + Mathf.Max(0f, fallbackGraceSeconds));
-        Debug.Log("[VRME] Auto briefing fallback armed. delaySeconds=" + delaySeconds +
+        float tutorialDelay = isTutorial ? tutorialIntroDelayAfterFirstUi : 0f;
+        if (tutorialDelay > 0f)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(tutorialDelay));
+        }
+
+        float minimumSceneAge = Mathf.Max(0f, autoIntroDelaySeconds + Mathf.Max(0f, fallbackGraceSeconds));
+        float remainingSceneDelay = Mathf.Max(0f, minimumSceneAge - (Time.realtimeSinceStartup - sceneStartedAtRealtime));
+        Debug.Log("[VRME] Auto briefing fallback armed. minimumSceneAge=" + minimumSceneAge +
+            ", remainingDelay=" + remainingSceneDelay +
+            ", gazeGate=" + requireAvatarAttentionBeforeAutoIntro +
+            ", gazeWindowSeconds=" + autoIntroAttentionWindowSeconds +
+            ", requiredAvatarDwellSeconds=" + autoIntroRequiredAvatarAttentionSeconds +
             ", backendProactive=" + useBackendProactiveIntro +
             ", scene=" + SceneManager.GetActiveScene().name);
-        await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+        if (remainingSceneDelay > 0f)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(remainingSceneDelay));
+        }
+
+        if (!await WaitForAvatarAttentionBeforeAutoIntroAsync())
+        {
+            return;
+        }
+
         string introPrompt = BuildAutoTaskBriefingPrompt();
         if (autoIntroSent || !isActiveAndEnabled || string.IsNullOrWhiteSpace(introPrompt))
         {
@@ -772,6 +808,72 @@ public class VrmeAtticClient : MonoBehaviour
                 return;
             }
         }
+    }
+
+    private async Task<bool> WaitForAvatarAttentionBeforeAutoIntroAsync()
+    {
+        if (!requireAvatarAttentionBeforeAutoIntro)
+        {
+            return true;
+        }
+
+        float windowSeconds = Mathf.Max(0.5f, autoIntroAttentionWindowSeconds);
+        float requiredSeconds = Mathf.Clamp(
+            autoIntroRequiredAvatarAttentionSeconds,
+            0.1f,
+            windowSeconds);
+        Debug.Log("[VRME] Auto briefing is waiting for avatar attention: " +
+            requiredSeconds.ToString("0.0") + "s accumulated within the latest " +
+            windowSeconds.ToString("0.0") + "s.");
+        float nextReminderAttemptAt = sceneStartedAtRealtime +
+            Mathf.Max(10f, autoIntroAttentionReminderDelaySeconds);
+
+        while (!autoIntroSent && isActiveAndEnabled &&
+               lifetimeCancellation != null && !lifetimeCancellation.IsCancellationRequested)
+        {
+            if (CameraPoseSender.TryGetRecentAvatarAttention(
+                    windowSeconds,
+                    requiredSeconds,
+                    out float accumulatedSeconds,
+                    out int hitSampleCount))
+            {
+                Debug.Log("[VRME] Avatar-attention gate satisfied. accumulatedDwellSeconds=" +
+                    accumulatedSeconds.ToString("0.0") +
+                    ", windowSeconds=" + windowSeconds.ToString("0.0") +
+                    ", hitSamples=" + hitSampleCount + ".");
+                return true;
+            }
+
+            if (enableAutoIntroAttentionReminder &&
+                !autoIntroAttentionReminderSent &&
+                Time.realtimeSinceStartup >= nextReminderAttemptAt)
+            {
+                Debug.Log("[VRME] Avatar-attention gate is still unmet after " +
+                    autoIntroAttentionReminderDelaySeconds.ToString("0.0") +
+                    "s; sending one attention reminder.");
+                bool reminderSent = await SendTextPromptAsync(
+                    "[SYSTEM_ATTENTION_REMINDER]\n" +
+                    "Say exactly this one short sentence and nothing else: Hey, I'm here.\n" +
+                    "Do not introduce the task, mention highlights, or ask a question.\n" +
+                    "[/SYSTEM_ATTENTION_REMINDER]",
+                    "attention_reminder");
+                if (reminderSent)
+                {
+                    autoIntroAttentionReminderSent = true;
+                    Debug.Log("[VRME] Avatar attention reminder completed; the task briefing still requires the gaze gate.");
+                }
+                else
+                {
+                    nextReminderAttemptAt = Time.realtimeSinceStartup +
+                        Mathf.Max(0.5f, reconnectDelaySeconds);
+                }
+                continue;
+            }
+
+            await Task.Yield();
+        }
+
+        return false;
     }
 
     private async Task WaitForTutorialFirstUiAsync()
@@ -1401,9 +1503,16 @@ public class VrmeAtticClient : MonoBehaviour
         }
         else
         {
-            // Lift the marker clear of floor/water depth fighting. This matters
-            // especially in the dark Tunnel scene.
-            float markerY = hasRendererBounds ? bounds.min.y + 0.08f : target.transform.position.y + 0.10f;
+            // Keep Tunnel close to its walkable surface; other scenes retain the
+            // larger offset needed to avoid floor/water depth fighting.
+            bool isTunnelScene = string.Equals(
+                SceneManager.GetActiveScene().name,
+                "Tunnel",
+                StringComparison.OrdinalIgnoreCase);
+            float surfaceOffset = isTunnelScene ? 0.03f : 0.08f;
+            float markerY = hasRendererBounds
+                ? bounds.min.y + surfaceOffset
+                : target.transform.position.y + surfaceOffset;
             marker.transform.position = new Vector3(bounds.center.x, markerY, bounds.center.z);
             marker.transform.localScale = new Vector3(markerRadius, 0.045f, markerRadius);
         }

@@ -315,6 +315,12 @@ MonoBehaviour:
   autoIntroOnStart: 1
   useBackendProactiveIntro: 0
   autoIntroDelaySeconds: 10
+  tutorialIntroDelayAfterFirstUi: 0.75
+  requireAvatarAttentionBeforeAutoIntro: 1
+  autoIntroAttentionWindowSeconds: 2
+  autoIntroRequiredAvatarAttentionSeconds: 1.5
+  enableAutoIntroAttentionReminder: 1
+  autoIntroAttentionReminderDelaySeconds: 30
   textPromptReplyTimeoutSeconds: 60
   autoIntroPrompt: Please give the participant a brief task briefing for the current
     VR scene. State the avatar's purpose and the single interaction task they should
