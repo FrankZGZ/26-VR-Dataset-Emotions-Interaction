@@ -23173,9 +23173,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 1603518291700351669, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
       propertyPath: scenePrompt
-      value: You are surrounded by a herd of elephants in an exciting natural setting.
-        The participant can approach, observe, and feed the elephants, whose reactions
-        may be surprising.
+      value:
       objectReference: {fileID: 0}
     - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
       propertyPath: m_LocalPosition.x

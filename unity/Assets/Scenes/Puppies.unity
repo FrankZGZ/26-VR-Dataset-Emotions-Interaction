@@ -39669,8 +39669,11 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 1603518291700351669, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
       propertyPath: scenePrompt
-      value: You are in a warm, familiar indoor room with playful puppies. The participant
-        can pet the puppies and play fetch with them using a ball.
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 1603518291700351669, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
+      propertyPath: autoIntroPrompt
+      value: 
       objectReference: {fileID: 0}
     - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
       propertyPath: m_LocalPosition.x
@@ -46911,7 +46914,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   realSceneBuildIndex: 7
   endSceneBuildIndex: 8
-  realSceneWaitTime: 60
 --- !u!4 &2135093330
 Transform:
   m_ObjectHideFlags: 0

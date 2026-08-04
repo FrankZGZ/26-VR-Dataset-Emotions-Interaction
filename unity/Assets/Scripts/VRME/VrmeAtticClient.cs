@@ -38,6 +38,10 @@ public class VrmeAtticClient : MonoBehaviour
     public string avatarObjectNameHints = "Rocketbox,ReadyPlayerMe,DigitalHuman,SocialAgent,CompanionAvatar";
     [Range(1, 40)] public int maxDiscoveredSceneObjects = 20;
     [Range(1f, 100f)] public float maxContextObjectDistance = 25f;
+    [Tooltip("Surface nearby non-interactive props (renderer-only, no InteractionTracker) as grounded conversation material, distinct from interactable objects. Reduces repetitive replies without letting the avatar invent objects.")]
+    public bool enableNearbyStaticSceneryContext = true;
+    [Range(1, 20)] public int maxStaticSceneryObjects = 6;
+    [Range(1f, 30f)] public float maxStaticSceneryDistance = 10f;
     public Transform playerTransform;
     public int maxRecentInteractionEvents = 5;
     public AudioSource playbackAudioSource;
@@ -50,21 +54,26 @@ public class VrmeAtticClient : MonoBehaviour
     public bool autoIntroOnStart = true;
     [Tooltip("Legacy server-push mode. Keep this off; the reliable path sends one auto briefing request after the delay.")]
     public bool useBackendProactiveIntro = false;
-    [Range(0f, 60f)] public float autoIntroDelaySeconds = 10f;
+    [Range(0f, 60f)] public float autoIntroDelaySeconds = 0f;
     [Tooltip("Tutorial-only delay after the participant has completed the first UI.")]
     [Range(0f, 5f)] public float tutorialIntroDelayAfterFirstUi = 0.75f;
     [Tooltip("Require sustained attention toward the avatar before it proactively starts the task briefing.")]
     public bool requireAvatarAttentionBeforeAutoIntro = true;
-    [Range(0.5f, 5f)] public float autoIntroAttentionWindowSeconds = 2f;
-    [Range(0.1f, 5f)] public float autoIntroRequiredAvatarAttentionSeconds = 1.5f;
-    [Tooltip("After the formal-scene 10-second setup period, wait at most this much longer for avatar attention before starting anyway.")]
+    [Range(0.5f, 5f)] public float autoIntroAttentionWindowSeconds = 1f;
+    // 750ms follows Reddy et al. (2024)'s SPN-based intention-detection dwell
+    // threshold, cited via "Anticipation Before Action: EEG-Based Implicit
+    // Intent Detection for Adaptive Gaze Interaction in Mixed Reality"
+    // (arXiv:2601.18750), which places it within the typical 500-1000ms window
+    // for SPN elicitation.
+    [Range(0.1f, 5f)] public float autoIntroRequiredAvatarAttentionSeconds = 0.75f;
+    [Tooltip("If the participant has not looked at the avatar by this scene age, stop waiting silently and speak one short 'Hi, I'm here' attention-getter instead of the full briefing. The full briefing is still only spoken once the gaze gate is actually satisfied.")]
     [Range(0f, 15f)] public float autoIntroMaximumAttentionWaitSeconds = 5f;
-    [Tooltip("If the participant has not satisfied the avatar-attention gate by this scene age, speak one short location reminder without revealing the task.")]
+    [Tooltip("Repeat the short 'Hi, I'm here' attention-getter at this interval for as long as the participant still has not looked at the avatar.")]
     public bool enableAutoIntroAttentionReminder = true;
     [Range(10f, 120f)] public float autoIntroAttentionReminderDelaySeconds = 30f;
     [Range(5f, 120f)] public float textPromptReplyTimeoutSeconds = 60f;
     [TextArea(3, 8)] public string autoIntroPrompt =
-        "Please give the participant a brief task briefing for the current VR scene. State the avatar's purpose and the single interaction task they should try before free exploration.";
+        "Greet the participant briefly in one short sentence, in whatever style fits the selected avatar condition, then ask them to describe in their own words what they notice around them. Keep it to one short open question. Do not mention any task, objective, goal, or specific interactive object.";
     public bool enableTaskHighlights = true;
     [Tooltip("Send scene context with the initial config so backend proactive guidance can be context-aware without showing highlights early.")]
     public bool sendSceneContextWithConfig = true;
@@ -85,10 +94,18 @@ public class VrmeAtticClient : MonoBehaviour
     private bool isReceivingBackendProactiveIntro;
     private bool recordKeyWasDown;
     private bool autoIntroSent;
-    private bool autoIntroAttentionReminderSent;
+    // The auto-briefing's LLM+TTS round trip is fetched as soon as it's known
+    // to be needed, in parallel with the gaze-gate wait, so its latency is
+    // hidden behind the time the participant naturally spends settling into
+    // the scene. Audible playback is held in this buffer until the gaze gate
+    // actually resolves, so the avatar still never speaks before the
+    // participant is looking at it.
+    private bool autoIntroPlaybackHeld;
+    private readonly List<Action> heldAutoIntroPlaybackActions = new List<Action>();
     private bool taskHighlightsActivated;
     private bool guidedTaskActive;
     private bool guidedTaskCompleted;
+    private bool guidedTaskProgressSent;
     private DateTime guidedTaskActivatedAtUtc = DateTime.MinValue;
     private CancellationTokenSource lifetimeCancellation;
     private float sceneStartedAtRealtime;
@@ -155,6 +172,7 @@ public class VrmeAtticClient : MonoBehaviour
         Debug.Log("[VRME] Client started. recordKey=" + (enableKeyboardRecordKey ? recordKey.ToString() : "disabled") +
             ", controllerRecordButton=" + (enableControllerRecordButton ? recordController + "/" + recordControllerButton : "disabled") +
             ", microphones=" + Microphone.devices.Length +
+            ", micDeviceNames=[" + string.Join(", ", Microphone.devices) + "]" +
             ", sessionId=" + PlayerData.sessionId +
             ", avatarCondition=" + PlayerData.avatarCondition);
 
@@ -165,6 +183,8 @@ public class VrmeAtticClient : MonoBehaviour
         }
 
         NormalizeLakeInteractionTrackers();
+        AttachGunmanPresenceTracker();
+        AttachExitDoorStateTracker();
 
         if (autoAttachAvatarAttentionTracker)
         {
@@ -313,7 +333,34 @@ public class VrmeAtticClient : MonoBehaviour
 
         recordKeyWasDown = recordInputIsDown;
         streamingPlayer?.Update();
+        CheckGuidedTaskProgress();
         CheckGuidedTaskCompletion();
+    }
+
+    private void CheckGuidedTaskProgress()
+    {
+        if (!guidedTaskActive || guidedTaskCompleted || guidedTaskProgressSent || activeGuidedTaskSpec == null)
+        {
+            return;
+        }
+
+        foreach (GameObject taskObject in activeGuidedTaskObjects)
+        {
+            if (taskObject == null)
+            {
+                continue;
+            }
+
+            InteractionTracker tracker = taskObject.GetComponent<InteractionTracker>();
+            if (tracker != null && tracker.isUsed)
+            {
+                guidedTaskProgressSent = true;
+                string sceneName = SceneManager.GetActiveScene().name;
+                Debug.Log("[VRME] Guided task object first used; sending stage-progress trigger. scene=" + sceneName + ", object=" + tracker.ContextName);
+                _ = SendStageProgressAsync(sceneName, tracker.ContextName);
+                return;
+            }
+        }
     }
 
     private void OnGUI()
@@ -534,17 +581,17 @@ public class VrmeAtticClient : MonoBehaviour
             case "tutorial_interaction":
                 return "A VR interaction tutorial. The participant can practice grabbing and throwing the blue cubes, speak to the nearby avatar by holding the right-controller A button, and finish at the marked Exit.";
             case "lake":
-                return "A lakeside VR scene. The guided interaction is to pick up either the highlighted airplane or the highlighted stone and throw it toward the highlighted target area by the lake.";
+                return "A jetty in front of a stone house by a calm lake, with hills covered by trees and grass. At the end of the jetty there are two stones and two paper planes. Stones can be grabbed and thrown into the lake, producing splash sounds and visible ripples on the water surface. Paper planes can also be picked up and thrown, with a visible trajectory during flight. This is background knowledge only, never volunteered. Naming an object the participant already named or is looking at is fine, but the interaction/function described here (what it can be used for or how) may only be revealed if the participant explicitly asks what they can do, what something is for, or otherwise clearly asks for help — merely naming or describing an object is not enough to unlock its function.";
             case "attic":
-                return "An attic VR scene. The guided interaction is to use the highlighted shield and move behind the highlighted safe position.";
+                return "A furnished attic. After a short delay, a man breaks in shouting and aiming a pistol at the participant. A metal riot shield leaning against the wall has a small bulletproof glass window; it can be grabbed for protection, used to block the view of the man, and the man can still be observed safely through the window. This is background knowledge only, never volunteered. Naming an object the participant already named or is looking at is fine, but the interaction/function described here (what it can be used for or how) may only be revealed if the participant explicitly asks what they can do, what something is for, or otherwise clearly asks for help — merely naming or describing an object is not enough to unlock its function.";
             case "puppies":
-                return "A VR scene with puppies. The guided interaction is to pick up the highlighted tennis ball and throw it toward the highlighted puppy.";
+                return "A spacious furnished room with three puppies moving around and a tennis ball on a table. Petting a puppy makes it turn toward the participant and sit down. The tennis ball can be picked up and thrown; the puppies will chase it and bring it back. If nobody interacts with them for over 15 seconds, the puppies settle down and sit still. This is background knowledge only, never volunteered. Naming an object the participant already named or is looking at is fine, but the interaction/function described here (what it can be used for or how) may only be revealed if the participant explicitly asks what they can do, what something is for, or otherwise clearly asks for help — merely naming or describing an object is not enough to unlock its function.";
             case "solitaryconfinement":
-                return "A solitary-confinement VR scene. The guided interaction is to use one of the highlighted movable cell objects and move or throw it toward the highlighted door target.";
+                return "A confined, gloomy cell with a flashing light, a toilet seat, and a single bed. A book and a metal cup sit on a table. The iron door can be knocked on, producing loud knocking sounds. The book and cup can be picked up and thrown at the door. This is background knowledge only, never volunteered. Naming an object the participant already named or is looking at is fine, but the interaction/function described here (what it can be used for or how) may only be revealed if the participant explicitly asks what they can do, what something is for, or otherwise clearly asks for help — merely naming or describing an object is not enough to unlock its function.";
             case "tunnel":
-                return "A dark tunnel VR scene. The guided interaction is to take the highlighted flashlight and move with it toward the highlighted position in the tunnel.";
+                return "A long, dimly lit tunnel with pedestrians occasionally passing by. A flashlight lies on the tunnel floor; once picked up it turns on and can be used to illuminate different areas of the tunnel. This is background knowledge only, never volunteered. Naming an object the participant already named or is looking at is fine, but the interaction/function described here (what it can be used for or how) may only be revealed if the participant explicitly asks what they can do, what something is for, or otherwise clearly asks for help — merely naming or describing an object is not enough to unlock its function.";
             case "elephant":
-                return "A VR scene with an elephant. The guided interaction is to pick up the highlighted banana and throw it toward the highlighted elephant.";
+                return "A green grassland with distant hills and a cloudy sky, where a herd of elephants slowly approaches. A banana floats above the grass; it can be picked up and thrown toward the elephants, who pick it up with their trunk and eat it. Touching an elephant makes it step back, raise its trunk, and vocalize. This is background knowledge only, never volunteered. Naming an object the participant already named or is looking at is fine, but the interaction/function described here (what it can be used for or how) may only be revealed if the participant explicitly asks what they can do, what something is for, or otherwise clearly asks for help — merely naming or describing an object is not enough to unlock its function.";
             case "real":
                 return "A mixed-reality transition scene used after the immersive VR scenes.";
             case "endscene":
@@ -728,8 +775,9 @@ public class VrmeAtticClient : MonoBehaviour
             await Task.Delay(TimeSpan.FromSeconds(tutorialDelay));
         }
 
-        // Tutorial starts shortly after its participant-ID UI closes. The six
-        // formal scenes retain their authored 10-second setup period.
+        // Tutorial starts shortly after its participant-ID UI closes. Formal
+        // scenes have no minimum setup delay either now; the avatar-attention
+        // gaze gate below is what actually paces the opening line.
         float minimumSceneAge = isTutorial
             ? 0f
             : Mathf.Max(0f, autoIntroDelaySeconds + Mathf.Max(0f, fallbackGraceSeconds));
@@ -746,11 +794,6 @@ public class VrmeAtticClient : MonoBehaviour
             await Task.Delay(TimeSpan.FromSeconds(remainingSceneDelay));
         }
 
-        if (!isTutorial && !await WaitForAvatarAttentionBeforeAutoIntroAsync())
-        {
-            return;
-        }
-
         string introPrompt = BuildAutoTaskBriefingPrompt();
         if (autoIntroSent || !isActiveAndEnabled || string.IsNullOrWhiteSpace(introPrompt))
         {
@@ -758,6 +801,46 @@ public class VrmeAtticClient : MonoBehaviour
             return;
         }
 
+        // The opening line's content never depends on live gaze/interaction
+        // data, so its LLM+TTS round trip can be fetched in the background
+        // while the participant is still settling into the scene. Only the
+        // audible playback is held back for the gaze gate below, so this only
+        // hides latency; it never makes the avatar speak before the
+        // participant is actually looking at it.
+        bool gazeGateActive = !isTutorial && requireAvatarAttentionBeforeAutoIntro;
+        if (gazeGateActive)
+        {
+            autoIntroPlaybackHeld = true;
+            Debug.Log("[VRME] Pre-fetching auto briefing audio in the background; playback held for the gaze gate.");
+        }
+
+        Task sendTask = SendAutoIntroRequestLoopAsync(introPrompt);
+
+        if (isTutorial)
+        {
+            await sendTask;
+            return;
+        }
+
+        bool attentionSatisfied = await WaitForAvatarAttentionBeforeAutoIntroAsync();
+        if (!attentionSatisfied)
+        {
+            autoIntroPlaybackHeld = false;
+            heldAutoIntroPlaybackActions.Clear();
+            await sendTask;
+            return;
+        }
+
+        if (gazeGateActive)
+        {
+            ReleaseHeldAutoIntroPlayback();
+        }
+
+        await sendTask;
+    }
+
+    private async Task SendAutoIntroRequestLoopAsync(string introPrompt)
+    {
         bool waitingForConnectionLogged = false;
         int sendAttempt = 0;
         while (!autoIntroSent && isActiveAndEnabled &&
@@ -793,7 +876,7 @@ public class VrmeAtticClient : MonoBehaviour
             if (sent)
             {
                 autoIntroSent = true;
-                if (enableTaskHighlights && !taskHighlightsActivated)
+                if (enableTaskHighlights && !taskHighlightsActivated && IsTaskHighlightRevealAllowedForCurrentScene())
                 {
                     Debug.Log("[VRME] Activating task highlights after auto briefing completed.");
                     ActivateSceneTaskHighlights();
@@ -816,6 +899,34 @@ public class VrmeAtticClient : MonoBehaviour
         }
     }
 
+    private void EnqueueOrHoldPlaybackAction(Action action, bool hold)
+    {
+        if (hold)
+        {
+            heldAutoIntroPlaybackActions.Add(action);
+        }
+        else
+        {
+            mainThreadActions.Enqueue(action);
+        }
+    }
+
+    private void ReleaseHeldAutoIntroPlayback()
+    {
+        autoIntroPlaybackHeld = false;
+        if (heldAutoIntroPlaybackActions.Count == 0)
+        {
+            return;
+        }
+
+        Debug.Log("[VRME] Gaze gate satisfied; releasing " + heldAutoIntroPlaybackActions.Count + " buffered auto-briefing playback action(s).");
+        foreach (Action action in heldAutoIntroPlaybackActions)
+        {
+            mainThreadActions.Enqueue(action);
+        }
+        heldAutoIntroPlaybackActions.Clear();
+    }
+
     private async Task<bool> WaitForAvatarAttentionBeforeAutoIntroAsync()
     {
         if (!requireAvatarAttentionBeforeAutoIntro)
@@ -831,12 +942,21 @@ public class VrmeAtticClient : MonoBehaviour
         Debug.Log("[VRME] Auto briefing is waiting for avatar attention: " +
             requiredSeconds.ToString("0.0") + "s accumulated within the latest " +
             windowSeconds.ToString("0.0") + "s.");
+        // No forced start here anymore: if the participant never looks, we never
+        // speak the full briefing. We only ever nudge with a short "Hi, I'm here"
+        // so the real introduction is never heard before they're actually
+        // looking (which would be startling and easy to miss/mishear).
         float nextReminderAttemptAt = sceneStartedAtRealtime +
-            Mathf.Max(10f, autoIntroAttentionReminderDelaySeconds);
-        float attentionWaitDeadline = Time.realtimeSinceStartup +
             Mathf.Max(0f, autoIntroMaximumAttentionWaitSeconds);
 
-        while (!autoIntroSent && isActiveAndEnabled &&
+        // Deliberately does not also check !autoIntroSent here: that flag flips true
+        // as soon as the parallel prefetch request finishes sending, which usually
+        // happens well before the participant has actually looked over. Stopping this
+        // wait on that flag was defeating the gaze gate entirely — the LLM+TTS round
+        // trip would finish, autoIntroSent would flip, this loop would exit with
+        // attentionSatisfied=false, and RunAutoIntroAsync would then clear the
+        // already-buffered playback before it was ever released for real gaze.
+        while (isActiveAndEnabled &&
                lifetimeCancellation != null && !lifetimeCancellation.IsCancellationRequested)
         {
             if (CameraPoseSender.TryGetRecentAvatarAttention(
@@ -852,35 +972,19 @@ public class VrmeAtticClient : MonoBehaviour
                 return true;
             }
 
-            if (Time.realtimeSinceStartup >= attentionWaitDeadline)
-            {
-                Debug.Log("[VRME] Avatar-attention grace period expired; starting the formal-scene briefing.");
-                return true;
-            }
-
             if (enableAutoIntroAttentionReminder &&
-                !autoIntroAttentionReminderSent &&
                 Time.realtimeSinceStartup >= nextReminderAttemptAt)
             {
-                Debug.Log("[VRME] Avatar-attention gate is still unmet after " +
-                    autoIntroAttentionReminderDelaySeconds.ToString("0.0") +
-                    "s; sending one attention reminder.");
+                Debug.Log("[VRME] Avatar-attention gate is still unmet; sending a short attention-getter and continuing to wait for gaze.");
                 bool reminderSent = await SendTextPromptAsync(
                     "[SYSTEM_ATTENTION_REMINDER]\n" +
-                    "Say exactly this one short sentence and nothing else: Hey, I'm here.\n" +
+                    "Say exactly this one short sentence and nothing else: Hi, I'm here.\n" +
                     "Do not introduce the task, mention highlights, or ask a question.\n" +
                     "[/SYSTEM_ATTENTION_REMINDER]",
                     "attention_reminder");
-                if (reminderSent)
-                {
-                    autoIntroAttentionReminderSent = true;
-                    Debug.Log("[VRME] Avatar attention reminder completed; the task briefing still requires the gaze gate.");
-                }
-                else
-                {
-                    nextReminderAttemptAt = Time.realtimeSinceStartup +
-                        Mathf.Max(0.5f, reconnectDelaySeconds);
-                }
+                nextReminderAttemptAt = Time.realtimeSinceStartup + (reminderSent
+                    ? Mathf.Max(10f, autoIntroAttentionReminderDelaySeconds)
+                    : Mathf.Max(0.5f, reconnectDelaySeconds));
                 continue;
             }
 
@@ -924,13 +1028,29 @@ public class VrmeAtticClient : MonoBehaviour
         }
     }
 
+    // Fallback used whenever the serialized autoIntroPrompt field is blank (for
+    // example after clearing an old Inspector override). Unity keeps whatever
+    // value is serialized in the scene regardless of this class's field
+    // initializer, so an empty override would otherwise silently skip the
+    // entire opening turn instead of reverting to this text.
+    private const string DefaultAutoIntroPrompt =
+        "Greet the participant briefly in one short sentence, in whatever style fits the selected avatar condition, then ask them to describe in their own words " +
+        "what they notice around them. Keep it to one short open question. Do not mention any task, objective, goal, " +
+        "or specific interactive object.";
+
     private string BuildAutoTaskBriefingPrompt()
     {
         string sceneName = SceneManager.GetActiveScene().name;
         string taskObjective = GetSceneTaskObjective(sceneName);
         if (string.IsNullOrWhiteSpace(taskObjective))
         {
-            return autoIntroPrompt;
+            // Wrapped so the backend can tag its reply source as "auto_briefing" (see
+            // response_source in server_unity_vibevoice.py). Without this marker the
+            // backend falls through to source="reply", which fails the client-side
+            // source=="auto_briefing" check that gates playback behind the gaze gate —
+            // the six formal scenes' opening line was never actually being held back.
+            string greeting = string.IsNullOrWhiteSpace(autoIntroPrompt) ? DefaultAutoIntroPrompt : autoIntroPrompt;
+            return "[SYSTEM_OPENING_GREETING]\n" + greeting + "\n[/SYSTEM_OPENING_GREETING]";
         }
 
         return
@@ -948,18 +1068,11 @@ public class VrmeAtticClient : MonoBehaviour
         {
             case "tutorial_interaction":
                 return "Hold the right-controller A button to speak with the nearby avatar, then practice grabbing and throwing a blue cube. To finish, use the controller thumbstick to move to the marked Exit position; do not physically walk there.";
-            case "puppies":
-                return "Use the highlighted tennis ball and throw it toward the highlighted puppy.";
-            case "elephant":
-                return "Use the highlighted banana and throw it toward the highlighted elephant.";
-            case "lake":
-                return "Use either the highlighted airplane or the highlighted stone and throw it toward the highlighted lake target area.";
-            case "solitaryconfinement":
-                return "Use the highlighted prison object and move or throw it toward the highlighted target area.";
-            case "tunnel":
-                return "Use the highlighted flashlight and move toward the highlighted tunnel position.";
-            case "attic":
-                return "Use the highlighted shield and move behind the highlighted safe position.";
+            // The six formal emotion scenes intentionally have no spoken task objective:
+            // the interaction each scene affords is discoverable background knowledge
+            // (see GetSceneDescription) that the avatar may only speak to reactively,
+            // never announce. BuildAutoTaskBriefingPrompt() falls back to autoIntroPrompt
+            // (greeting + open question) for any scene that returns "" here.
             default:
                 return "";
         }
@@ -987,6 +1100,7 @@ public class VrmeAtticClient : MonoBehaviour
         activeGuidedTaskMarkers.Clear();
         guidedTaskActive = spec.CompletionMode != GuidedTaskCompletionMode.None;
         guidedTaskCompleted = false;
+        guidedTaskProgressSent = false;
         guidedTaskActivatedAtUtc = DateTime.UtcNow;
         taskHighlightsActivated = true;
 
@@ -1905,9 +2019,11 @@ public class VrmeAtticClient : MonoBehaviour
     {
         guidedTaskCompleted = true;
         guidedTaskActive = false;
+        string sceneName = SceneManager.GetActiveScene().name;
         ClearGuidedTaskHighlights();
-        Debug.Log("[VRME] Guided task completed. scene=" + SceneManager.GetActiveScene().name + ", source=" + completionSource);
+        Debug.Log("[VRME] Guided task completed. scene=" + sceneName + ", source=" + completionSource);
         Debug.Log("[VRME] Conversation and scene interaction remain active until the participant enters the Exit trigger.");
+        _ = SendStageCompleteAsync(sceneName, completionSource);
     }
 
     private void ClearGuidedTaskHighlights()
@@ -2169,6 +2285,62 @@ public class VrmeAtticClient : MonoBehaviour
         }
     }
 
+    private async Task SendStageProgressAsync(string sceneName, string objectContextName)
+    {
+        string prompt =
+            "[SYSTEM_STAGE_PROGRESS]\n" +
+            "Scene: " + sceneName + "\n" +
+            "Object: " + objectContextName + "\n" +
+            "Say only one short spoken sentence acknowledging the participant now has this object, then give " +
+            "the exact next grounded step for this scene. Do not ask a question.\n" +
+            "[/SYSTEM_STAGE_PROGRESS]";
+
+        for (int attempt = 0; attempt < 5; attempt++)
+        {
+            if (!isSending)
+            {
+                bool sent = await SendTextPromptAsync(prompt, "stage_progress");
+                if (sent)
+                {
+                    Debug.Log("[VRME] Stage-progress trigger sent. scene=" + sceneName + ", object=" + objectContextName);
+                    return;
+                }
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(0.5));
+        }
+
+        Debug.LogWarning("[VRME] Stage-progress trigger gave up after retries. scene=" + sceneName);
+    }
+
+    private async Task SendStageCompleteAsync(string sceneName, string completionSource)
+    {
+        string prompt =
+            "[SYSTEM_STAGE_COMPLETE]\n" +
+            "Scene: " + sceneName + "\n" +
+            "Source: " + completionSource + "\n" +
+            "Say only one short spoken sentence confirming the guided interaction is complete, then invite " +
+            "optional free exploration. Do not ask a question.\n" +
+            "[/SYSTEM_STAGE_COMPLETE]";
+
+        for (int attempt = 0; attempt < 5; attempt++)
+        {
+            if (!isSending)
+            {
+                bool sent = await SendTextPromptAsync(prompt, "stage_complete");
+                if (sent)
+                {
+                    Debug.Log("[VRME] Stage-complete trigger sent. scene=" + sceneName + ", source=" + completionSource);
+                    return;
+                }
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(0.5));
+        }
+
+        Debug.LogWarning("[VRME] Stage-complete trigger gave up after retries. scene=" + sceneName);
+    }
+
     private async Task SendAudioAsync(
         byte[] wavBytes,
         string capturedTurnContext,
@@ -2287,10 +2459,10 @@ public class VrmeAtticClient : MonoBehaviour
 
                     if (tracker.isCurrentlyHeld)
                     {
-                        currentHeldObjects.Add(tracker.ContextName);
+                        currentHeldObjects.Add(CleanSpokenObjectName(tracker.ContextName));
                     }
 
-                    writer.WriteLine("- " + tracker.ContextName + " | interactionState={" + tracker.InteractionStateSummary + "}");
+                    writer.WriteLine("- " + CleanSpokenObjectName(tracker.ContextName) + " | interactionState={" + tracker.InteractionStateSummary + "}");
                 }
             }
             writer.WriteLine("[/INTERACTABLE_OBJECT_STATES]");
@@ -2341,7 +2513,7 @@ public class VrmeAtticClient : MonoBehaviour
             }
             if (tracker.isCurrentlyHeld)
             {
-                currentHeldObjects.Add(tracker.ContextName);
+                currentHeldObjects.Add(CleanSpokenObjectName(tracker.ContextName));
             }
         }
 
@@ -2369,15 +2541,16 @@ public class VrmeAtticClient : MonoBehaviour
                 {
                     InteractionTracker tracker = nearbyInteractables[i];
                     string location = FormatGuidedTaskLocation(
-                        tracker.ContextName,
+                        CleanSpokenObjectName(tracker.ContextName),
                         tracker.transform.position,
                         player,
                         playerPosition);
                     writer.WriteLine("- " + location + " | currentHeld=" + tracker.isCurrentlyHeld);
                 }
             }
-            writer.WriteLine("authority=This is a fresh list of tracked, currently available interaction objects near the participant at this User Trigger. It describes availability, not proof that an object was used.");
+            writer.WriteLine("authority=fresh availability, not proof of use");
             writer.WriteLine("[/NEARBY_INTERACTABLE_OBJECTS]");
+            writer.WriteLine(BuildNearbyStaticSceneryContext(player, playerPosition));
             writer.WriteLine("[CURRENT_HELD_OBJECTS]");
             if (currentHeldObjects.Count == 0)
             {
@@ -2391,17 +2564,193 @@ public class VrmeAtticClient : MonoBehaviour
                     writer.WriteLine("- " + heldObject);
                 }
             }
-            writer.WriteLine("authority=Only objects listed above are currently in the participant's hand at this voice trigger.");
+            writer.WriteLine("authority=definitive list of what's held right now");
             writer.WriteLine("[/CURRENT_HELD_OBJECTS]");
 
             writer.WriteLine("[RECENT_CONTROLLER_EVENTS]");
             writer.WriteLine(InteractionTracker.GetRecentEventsTextSince(voiceTurnStartedAtUtc, maxRecentInteractionEvents));
-            writer.WriteLine("authority=These controller events occurred during the current voice-trigger window only. A grab event does not prove the object is still held; CURRENT_HELD_OBJECTS is authoritative for current holding.");
+            writer.WriteLine("authority=this-turn-only; CURRENT_HELD_OBJECTS overrides for current holding");
             writer.WriteLine("[/RECENT_CONTROLLER_EVENTS]");
 
             writer.WriteLine(BuildGuidedTaskContext(player, playerPosition));
             return writer.ToString().TrimEnd();
         }
+    }
+
+    // Surfaces non-interactive decorative props (renderer-only, never tracked as
+    // an InteractionTracker) so the avatar has grounded, real conversation
+    // material beyond the fixed interactable/task objects. Because every name
+    // here is a real object with a real position, this widens what the avatar
+    // can talk about without opening the door to inventing objects — the
+    // accompanying instruction line still forbids suggesting interaction with
+    // them, so it does not create new (imagined) affordances.
+    private string BuildNearbyStaticSceneryContext(Transform player, Vector3 playerPosition)
+    {
+        using (var writer = new StringWriter())
+        {
+            writer.WriteLine("[NEARBY_STATIC_SCENERY]");
+            writer.WriteLine("authority=decorative only, not interactable; never suggest grabbing/using/functions for these, name only for variety");
+
+            if (!enableNearbyStaticSceneryContext)
+            {
+                writer.WriteLine("none (disabled)");
+                writer.WriteLine("[/NEARBY_STATIC_SCENERY]");
+                return writer.ToString().TrimEnd();
+            }
+
+            var seenObjects = new HashSet<GameObject>();
+            var candidates = new List<KeyValuePair<GameObject, float>>();
+            Renderer[] renderers = FindObjectsByType<Renderer>(FindObjectsSortMode.None);
+            foreach (Renderer objectRenderer in renderers)
+            {
+                if (objectRenderer == null || !objectRenderer.enabled || !objectRenderer.gameObject.activeInHierarchy)
+                {
+                    continue;
+                }
+
+                GameObject candidate = objectRenderer.gameObject;
+                Rigidbody attachedBody = candidate.GetComponentInParent<Rigidbody>();
+                if (attachedBody != null)
+                {
+                    candidate = attachedBody.gameObject;
+                }
+
+                if (candidate == null || seenObjects.Contains(candidate) ||
+                    candidate.GetComponent<InteractionTracker>() != null ||
+                    candidate.GetComponentInParent<InteractionTracker>() != null ||
+                    HasInteractionLikeComponent(candidate))
+                {
+                    continue;
+                }
+
+                string candidateName = GetContextObjectName(candidate);
+                if (IsIgnoredStaticSceneryObject(candidateName))
+                {
+                    continue;
+                }
+
+                float distance = player != null ? Vector3.Distance(playerPosition, candidate.transform.position) : 0f;
+                if (player != null && distance > maxStaticSceneryDistance)
+                {
+                    continue;
+                }
+
+                seenObjects.Add(candidate);
+                candidates.Add(new KeyValuePair<GameObject, float>(candidate, distance));
+            }
+
+            if (candidates.Count == 0)
+            {
+                writer.WriteLine("none");
+            }
+            else
+            {
+                candidates.Sort((left, right) => left.Value.CompareTo(right.Value));
+                // Multi-mesh props (a lamp's cover/frame/mount as separate
+                // renderers, for example) otherwise list the same physical
+                // object several times. Collapse anything within ~0.4m of an
+                // already-accepted spot down to a single mention.
+                var acceptedPositions = new List<Vector3>();
+                var accepted = new List<GameObject>();
+                foreach (KeyValuePair<GameObject, float> candidatePair in candidates)
+                {
+                    if (accepted.Count >= Mathf.Max(1, maxStaticSceneryObjects))
+                    {
+                        break;
+                    }
+
+                    Vector3 position = candidatePair.Key.transform.position;
+                    bool tooCloseToAccepted = false;
+                    foreach (Vector3 acceptedPosition in acceptedPositions)
+                    {
+                        if (Vector3.Distance(position, acceptedPosition) < 0.4f)
+                        {
+                            tooCloseToAccepted = true;
+                            break;
+                        }
+                    }
+
+                    if (tooCloseToAccepted)
+                    {
+                        continue;
+                    }
+
+                    acceptedPositions.Add(position);
+                    accepted.Add(candidatePair.Key);
+                }
+
+                foreach (GameObject candidate in accepted)
+                {
+                    string displayName = CleanSpokenObjectName(GetContextObjectName(candidate));
+                    writer.WriteLine("- " + FormatGuidedTaskLocation(displayName, candidate.transform.position, player, playerPosition));
+                }
+            }
+
+            writer.WriteLine("[/NEARBY_STATIC_SCENERY]");
+            return writer.ToString().TrimEnd();
+        }
+    }
+
+    // Static scenery reuses IsIgnoredContextObject's system-object denylist and
+    // additionally screens out ground/wall/tiling clutter (for example the
+    // repeated "Stone Floor prefab (225)/street" instances also seen in
+    // NEARBY_INTERACTABLE_OBJECTS) so the list stays a short, curated set of
+    // genuinely nameable props rather than a dump of level geometry.
+    private static readonly string[] StaticSceneryIgnoredNameFragments =
+    {
+        "floor", "ground", "terrain", "street", "wall", "ceiling", "roof",
+        "collider", "trigger", "spawn", "waypoint", "boundary", "occlusion",
+        "navmesh", "reset point", "teleport", "exit", "safe position",
+        "highlight", "outline", "marker", "target", "prefab (", "skybox",
+        "post process", "volume", "reflection probe", "light probe", "poke",
+        // The scripted antagonist (and his weapon) already has dedicated,
+        // carefully worded handling via STATIC_SCENE_DESCRIPTION and
+        // AtticSoundController; he must never be surfaced as casual
+        // "conversation variety" filler alongside a lamp or a table.
+        "gun", "beretta", "man_0", "man_1", "screaming"
+    };
+
+    // Strips trailing asset-catalog codes (for example "Table IKEA LERHAMN
+    // N070421" -> "Table IKEA LERHAMN", "Radiator N110514 (1)" -> "Radiator"),
+    // trailing instance numbers with no space (for example "Slant1" -> "Slant",
+    // "Shield01" -> "Shield"), and splits camelCase compound asset names (for
+    // example "LampFrame" -> "Lamp Frame"). Applied to every raw Unity object
+    // name before it enters any context block, so the avatar never reads an
+    // internal object/instance name out loud verbatim, whether it's decorative
+    // scenery or a task-relevant interactable.
+    private static string CleanSpokenObjectName(string rawName)
+    {
+        if (string.IsNullOrWhiteSpace(rawName))
+        {
+            return rawName;
+        }
+
+        string cleaned = System.Text.RegularExpressions.Regex.Replace(
+            rawName,
+            @"\s+[A-Za-z]{0,3}\d{4,}(\s*\(\d+\))?$",
+            "");
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"\s*\(\d+\)$", "").Trim();
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"(?<=[A-Za-z])\d+$", "").Trim();
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, "(?<=[a-z])(?=[A-Z])", " ").Trim();
+        return string.IsNullOrWhiteSpace(cleaned) ? rawName.Trim() : cleaned;
+    }
+
+    private static bool IsIgnoredStaticSceneryObject(string objectName)
+    {
+        if (string.IsNullOrWhiteSpace(objectName) || IsIgnoredContextObject(objectName))
+        {
+            return true;
+        }
+
+        foreach (string fragment in StaticSceneryIgnoredNameFragments)
+        {
+            if (objectName.IndexOf(fragment, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private string BuildGuidedTaskContext(Transform player, Vector3 playerPosition)
@@ -2413,7 +2762,7 @@ public class VrmeAtticClient : MonoBehaviour
             writer.WriteLine("scene=" + sceneName);
             writer.WriteLine("status=" + (guidedTaskCompleted ? "completed" : (guidedTaskActive ? "active" : (taskHighlightsActivated ? "highlighted_without_completion_check" : "not_started"))));
             writer.WriteLine("objective=" + GetSceneTaskObjective(sceneName));
-            writer.WriteLine("instruction_for_avatar=If the participant says they cannot find the object or target, guide them using the highlighted object and target directions below. Suggest only physically grounded actions: grab, carry, move, throw, place, or bring the highlighted object toward the highlighted target. Do not invent object-specific functions such as opening, reading, activating, switching on, transforming, or triggering hidden mechanisms unless an explicit interaction event/state proves that ability. Do not invent unseen objects or exact coordinates in speech; describe relative directions naturally.");
+            writer.WriteLine("instruction_for_avatar=Background only, nothing is marked/highlighted; never say 'highlighted' or announce unprompted, only name if participant's words/actions lead there or as last-resort nudge. Only grounded actions (grab/carry/move/throw/place/bring toward target). No invented functions (open/read/activate/switch/transform) without proof. No invented objects/coordinates; use relative directions.");
 
             if (activeGuidedTaskObjects.Count == 0 && activeGuidedTaskTargets.Count == 0)
             {
@@ -2426,9 +2775,9 @@ public class VrmeAtticClient : MonoBehaviour
                     return writer.ToString();
                 }
 
-                writer.WriteLine("plannedHighlights=not_visible_until_avatar_briefing_begins");
-                writer.WriteLine("plannedHighlightedObjectHints=" + string.Join(", ", plannedSpec.ObjectNames));
-                writer.WriteLine("plannedHighlightedTargetHints=" + (plannedSpec.TargetNames.Length > 0 ? string.Join(", ", plannedSpec.TargetNames) : plannedSpec.TargetLabel));
+                writer.WriteLine("plannedHighlights=intentionally_never_shown_this_is_quiet_background_knowledge_only");
+                writer.WriteLine("plannedHighlightedObjectHints=" + string.Join(", ", Array.ConvertAll(plannedSpec.ObjectNames, CleanSpokenObjectName)));
+                writer.WriteLine("plannedHighlightedTargetHints=" + (plannedSpec.TargetNames.Length > 0 ? string.Join(", ", Array.ConvertAll(plannedSpec.TargetNames, CleanSpokenObjectName)) : plannedSpec.TargetLabel));
                 writer.WriteLine("plannedCompletionMode=" + plannedSpec.CompletionMode);
                 writer.WriteLine("plannedHighlightedObjects:");
                 var plannedObjects = new HashSet<GameObject>();
@@ -2441,7 +2790,7 @@ public class VrmeAtticClient : MonoBehaviour
                     }
 
                     plannedObjects.Add(plannedObject);
-                    writer.WriteLine("- " + FormatGuidedTaskLocation(plannedObject.name, GetGuidedObjectPoint(plannedObject), player, playerPosition));
+                    writer.WriteLine("- " + FormatGuidedTaskLocation(CleanSpokenObjectName(plannedObject.name), GetGuidedObjectPoint(plannedObject), player, playerPosition));
                 }
 
                 writer.WriteLine("plannedHighlightedTargets:");
@@ -2455,7 +2804,7 @@ public class VrmeAtticClient : MonoBehaviour
                     }
 
                     plannedTargets.Add(plannedTarget);
-                    string label = !string.IsNullOrWhiteSpace(plannedSpec.TargetLabel) ? plannedSpec.TargetLabel : plannedTarget.name;
+                    string label = !string.IsNullOrWhiteSpace(plannedSpec.TargetLabel) ? plannedSpec.TargetLabel : CleanSpokenObjectName(plannedTarget.name);
                     writer.WriteLine("- " + FormatGuidedTaskLocation(label, GetTargetCompletionPoint(plannedTarget), player, playerPosition));
                 }
 
@@ -2477,7 +2826,7 @@ public class VrmeAtticClient : MonoBehaviour
                     continue;
                 }
 
-                writer.WriteLine("- " + FormatGuidedTaskLocation(taskObject.name, GetGuidedObjectPoint(taskObject), player, playerPosition));
+                writer.WriteLine("- " + FormatGuidedTaskLocation(CleanSpokenObjectName(taskObject.name), GetGuidedObjectPoint(taskObject), player, playerPosition));
             }
 
             writer.WriteLine("highlightedTargets:");
@@ -2490,7 +2839,7 @@ public class VrmeAtticClient : MonoBehaviour
 
                 string label = activeGuidedTaskSpec != null && !string.IsNullOrWhiteSpace(activeGuidedTaskSpec.TargetLabel)
                     ? activeGuidedTaskSpec.TargetLabel
-                    : target.name;
+                    : CleanSpokenObjectName(target.name);
                 writer.WriteLine("- " + FormatGuidedTaskLocation(label, GetTargetCompletionPoint(target), player, playerPosition));
             }
 
@@ -2550,6 +2899,38 @@ public class VrmeAtticClient : MonoBehaviour
             writer.WriteLine("elephantCurrentlyEating=" + eating);
             writer.WriteLine("elephantReceivedBanana=" + fed);
             writer.WriteLine("animalStateAuthority=These values come directly from FeedElephants and may be used as evidence that the elephant received the banana.");
+        }
+        else if (string.Equals(sceneName, "Attic", StringComparison.OrdinalIgnoreCase))
+        {
+            bool inFinalPosition = false;
+            GunmanPresenceTracker[] gunmen = FindObjectsByType<GunmanPresenceTracker>(FindObjectsSortMode.None);
+            foreach (GunmanPresenceTracker gunman in gunmen)
+            {
+                if (gunman == null || !gunman.isActiveAndEnabled)
+                {
+                    continue;
+                }
+
+                inFinalPosition = inFinalPosition || gunman.InFinalPosition;
+            }
+
+            writer.WriteLine("gunmanInFinalPosition=" + inFinalPosition);
+            writer.WriteLine("animalStateAuthority=gunmanInFinalPosition comes directly from GunmanPresenceTracker; false means he is still walking in and has not arrived yet, true means he has reached his fixed spot and stays there facing the participant for the rest of the scene.");
+
+            bool doorOpen = false;
+            ExitDoorStateTracker[] doors = FindObjectsByType<ExitDoorStateTracker>(FindObjectsSortMode.None);
+            foreach (ExitDoorStateTracker door in doors)
+            {
+                if (door == null || !door.isActiveAndEnabled)
+                {
+                    continue;
+                }
+
+                doorOpen = doorOpen || door.IsOpen;
+            }
+
+            writer.WriteLine("exitDoorOpen=" + doorOpen);
+            writer.WriteLine("doorStateAuthority=exitDoorOpen comes directly from ExitDoorStateTracker; false means the exit door is still closed, true means it has been opened.");
         }
     }
 
@@ -2992,6 +3373,69 @@ public class VrmeAtticClient : MonoBehaviour
             ", stoneTrackers=" + stones + ", excludedTrackers=" + excluded + ".");
     }
 
+    // Runtime-attached (like AttachTrackersToSceneObjects above) instead of placed in
+    // the scene file, so the intruder's prefab instance in Attic.unity never needs to
+    // be hand-edited when this tracking behavior changes.
+    private void AttachGunmanPresenceTracker()
+    {
+        if (!string.Equals(SceneManager.GetActiveScene().name, "Attic", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        // AtticSoundController keeps the intruder GameObject SetActive(false) for the
+        // first several seconds of the scene (see additionalManDelaySeconds), so this
+        // must search inactive objects too or it will run before he ever exists to find.
+        foreach (Animator candidate in FindObjectsByType<Animator>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (candidate == null || candidate.runtimeAnimatorController == null ||
+                !string.Equals(candidate.runtimeAnimatorController.name, "GunManController", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (candidate.GetComponent<GunmanPresenceTracker>() == null)
+            {
+                candidate.gameObject.AddComponent<GunmanPresenceTracker>();
+                Debug.Log("[VRME] Attached GunmanPresenceTracker to " + candidate.gameObject.name + ".");
+            }
+
+            return;
+        }
+
+        Debug.LogWarning("[VRME] Attic scene has no Animator using GunManController; gunman presence cannot be tracked.");
+    }
+
+    // OpenDoorOnCharacter already holds a direct reference to the door's Animator
+    // (set true via its "openDoor" bool once the intruder walks through the trigger),
+    // so reuse that wiring instead of guessing which Animator belongs to the door.
+    private void AttachExitDoorStateTracker()
+    {
+        if (!string.Equals(SceneManager.GetActiveScene().name, "Attic", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        foreach (OpenDoorOnCharacter doorTrigger in FindObjectsByType<OpenDoorOnCharacter>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            Animator doorAnimator = doorTrigger != null ? doorTrigger.myAnimatorController : null;
+            if (doorAnimator == null)
+            {
+                continue;
+            }
+
+            if (doorAnimator.GetComponent<ExitDoorStateTracker>() == null)
+            {
+                doorAnimator.gameObject.AddComponent<ExitDoorStateTracker>();
+                Debug.Log("[VRME] Attached ExitDoorStateTracker to " + doorAnimator.gameObject.name + ".");
+            }
+
+            return;
+        }
+
+        Debug.LogWarning("[VRME] Attic scene has no OpenDoorOnCharacter with a wired Animator; exit door state cannot be tracked.");
+    }
+
     private static bool IsInNamedHierarchy(Transform item, params string[] objectNames)
     {
         Transform current = item;
@@ -3385,6 +3829,7 @@ public class VrmeAtticClient : MonoBehaviour
     {
         byte[] buffer = new byte[8192];
         bool receivingStream = false;
+        bool holdingCurrentStream = false;
 
         while (true)
         {
@@ -3431,20 +3876,23 @@ public class VrmeAtticClient : MonoBehaviour
                 {
                     receivingStream = true;
                     string source = ExtractJsonString(text, "source", "");
+                    holdingCurrentStream = autoIntroPlaybackHeld &&
+                        string.Equals(source, "auto_briefing", StringComparison.OrdinalIgnoreCase);
                     int streamSampleRate = ExtractJsonInt(text, "sampleRate", 24000);
                     int streamChannels = ExtractJsonInt(text, "channels", 1);
-                    mainThreadActions.Enqueue(() => BeginPcmStream(streamSampleRate, streamChannels));
+                    EnqueueOrHoldPlaybackAction(() => BeginPcmStream(streamSampleRate, streamChannels), holdingCurrentStream);
                     if (ShouldActivateHighlightsForReplySource(source))
                     {
-                        mainThreadActions.Enqueue(() => ActivateSceneTaskHighlightsFromAudioStart(source));
+                        EnqueueOrHoldPlaybackAction(() => ActivateSceneTaskHighlightsFromAudioStart(source), holdingCurrentStream);
                     }
-                    Debug.Log("[VRME] Audio stream started. source=" + source + ", sampleRate=" + streamSampleRate + ", channels=" + streamChannels);
+                    Debug.Log("[VRME] Audio stream started. source=" + source + ", sampleRate=" + streamSampleRate + ", channels=" + streamChannels +
+                        (holdingCurrentStream ? " (playback held for gaze gate)" : ""));
                     continue;
                 }
 
                 if (text.Contains("\"audio_stream_end\""))
                 {
-                    mainThreadActions.Enqueue(EndPcmStream);
+                    EnqueueOrHoldPlaybackAction(EndPcmStream, holdingCurrentStream);
                     Debug.Log("[VRME] Audio stream ended. WebSocket remains available for the next voice turn if the server keeps it open.");
                     return true;
                 }
@@ -3462,7 +3910,7 @@ public class VrmeAtticClient : MonoBehaviour
             if (receivingStream)
             {
                 byte[] pcmChunk = payload;
-                mainThreadActions.Enqueue(() => AppendPcmStreamChunk(pcmChunk));
+                EnqueueOrHoldPlaybackAction(() => AppendPcmStreamChunk(pcmChunk), holdingCurrentStream);
                 continue;
             }
 
@@ -3524,8 +3972,19 @@ public class VrmeAtticClient : MonoBehaviour
     {
         return enableTaskHighlights &&
             !taskHighlightsActivated &&
+            IsTaskHighlightRevealAllowedForCurrentScene() &&
             (string.Equals(source, "proactive_guide", StringComparison.OrdinalIgnoreCase) ||
              string.Equals(source, "auto_briefing", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // Task discovery is meant to stay conversational and incidental (see
+    // GetSceneDescription / BuildAutoTaskBriefingPrompt): the avatar must never
+    // single out which object matters. Ordinary object affordance is already
+    // handled separately by the distance-based HightlightObject outline, so this
+    // legacy "point at the task object" reveal is disabled for every scene.
+    private static bool IsTaskHighlightRevealAllowedForCurrentScene()
+    {
+        return false;
     }
 
     private void ActivateSceneTaskHighlightsFromAudioStart(string source)
