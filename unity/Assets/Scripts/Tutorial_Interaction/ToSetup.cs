@@ -17,6 +17,9 @@ public class ToSetup : MonoBehaviour
     public GameObject[] objectsToHide; // Objects to hide
     public GameObject[] objectsToShow; // Objects to show
 
+    public bool IsParticipantInputVisible =>
+        submitButton != null && submitButton.gameObject.activeInHierarchy;
+
     void Start()
     {
         // Button listener.
@@ -38,8 +41,10 @@ public class ToSetup : MonoBehaviour
             // Update participant ID in global variables
             PlayerData.participantId = inputCode;
             Debug.Log("[ToSetup] Participant ID set successfully: " + PlayerData.participantId);         
-            // Hide this object.
-            this.gameObject.SetActive(false);
+            // Hide only the participant-ID UI branch. CameraPoseSender also lives
+            // on SetupModule, so disabling this whole GameObject would silently
+            // stop gaze sampling as soon as the tutorial objects become visible.
+            HideSetupInterface();
             // Show instruction object.
             instructionObject.SetActive(true);
             // Hide objects.
@@ -48,6 +53,36 @@ public class ToSetup : MonoBehaviour
             ShowObjects();
             AppendExitMovementInstruction();
         }
+    }
+
+    private void HideSetupInterface()
+    {
+        if (submitButton == null)
+        {
+            Debug.LogWarning("[ToSetup] Submit button is missing; keeping SetupModule active so runtime tracking continues.");
+            return;
+        }
+
+        Transform uiBranch = submitButton.transform;
+        while (uiBranch.parent != null && uiBranch.parent != transform)
+        {
+            uiBranch = uiBranch.parent;
+        }
+
+        if (uiBranch.parent == transform)
+        {
+            uiBranch.gameObject.SetActive(false);
+            Debug.Log("[ToSetup] Participant-ID UI hidden; SetupModule remains active for gaze tracking.");
+            return;
+        }
+
+        // Fallback for scenes whose input UI is not grouped under SetupModule.
+        submitButton.gameObject.SetActive(false);
+        if (inputField != null)
+        {
+            inputField.gameObject.SetActive(false);
+        }
+        Debug.LogWarning("[ToSetup] Could not resolve the setup UI branch; hid the input controls individually.");
     }
 
     private void HideObjects()

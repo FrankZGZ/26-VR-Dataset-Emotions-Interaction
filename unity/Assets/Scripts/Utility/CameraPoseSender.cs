@@ -1394,6 +1394,12 @@ public class CameraPoseSender : MonoBehaviour
         foreach (RaycastHit hit in hits)
         {
             InteractionTracker tracker = FindConversationalTrackerInParents(hit.collider.transform);
+            if (tracker == null)
+            {
+                // Oculus grab tracking commonly lives on a HandGrab child while
+                // the physical collider is on the visible object's root.
+                tracker = FindConversationalTrackerInChildren(hit.collider.transform);
+            }
 
             if (tracker == null && HasSystemTrackerInParents(hit.collider.transform))
             {
@@ -1430,6 +1436,25 @@ public class CameraPoseSender : MonoBehaviour
         }
 
         bestHit = new RaycastHit();
+        return null;
+    }
+
+    private static InteractionTracker FindConversationalTrackerInChildren(Transform source)
+    {
+        if (source == null)
+        {
+            return null;
+        }
+
+        InteractionTracker[] trackers = source.GetComponentsInChildren<InteractionTracker>(true);
+        foreach (InteractionTracker tracker in trackers)
+        {
+            if (tracker != null && tracker.isActiveAndEnabled && !IsSystemInteractionTracker(tracker))
+            {
+                return tracker;
+            }
+        }
+
         return null;
     }
 
@@ -1513,7 +1538,20 @@ public class CameraPoseSender : MonoBehaviour
             return true;
         }
 
-        string identity = (tracker.ContextName + " " + tracker.gameObject.name).ToLowerInvariant();
+        // A semantic tracker may intentionally live on Oculus' internal
+        // "[BuildingBlock] HandGrab" node so it can observe the real selection
+        // events. Its explicit displayName identifies the scene object and must
+        // take precedence over the implementation-node name.
+        if (!string.IsNullOrWhiteSpace(tracker.displayName))
+        {
+            return ContainsSystemTrackerIdentity(tracker.displayName.ToLowerInvariant());
+        }
+
+        return ContainsSystemTrackerIdentity(tracker.gameObject.name.ToLowerInvariant());
+    }
+
+    private static bool ContainsSystemTrackerIdentity(string identity)
+    {
         return identity.Contains("[buildingblock] handgrab") ||
                identity.Contains("controllergrablocation") ||
                identity.Contains("controller interactor") ||

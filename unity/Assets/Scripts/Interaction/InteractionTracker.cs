@@ -27,6 +27,8 @@ public class InteractionTracker : MonoBehaviour
     public bool isCurrentlyHeld { get; private set; } = false;
     public string lastUseSource { get; private set; } = "";
     public System.DateTime LastControllerGrabUtc { get; private set; } = System.DateTime.MinValue;
+    public System.DateTime LastControllerReleaseUtc { get; private set; } = System.DateTime.MinValue;
+    public Vector3 LastControllerReleasePosition { get; private set; }
     public System.DateTime LastCollisionUtc { get; private set; } = System.DateTime.MinValue;
     public string LastCollisionSourceName { get; private set; } = "";
     private GrabInteractable grabInteractable;
@@ -57,6 +59,8 @@ public class InteractionTracker : MonoBehaviour
         {
             isCurrentlyHeld = false;
             activePointerIds.Clear();
+            LastControllerReleaseUtc = System.DateTime.UtcNow;
+            LastControllerReleasePosition = transform.position;
             Debug.Log($"[InteractionTracker] Corrected stale held state for {gameObject.name}; no selecting interactor remains.");
             AddRecentEvent("release:corrected", "refresh");
         }
@@ -153,6 +157,8 @@ public class InteractionTracker : MonoBehaviour
 
         isCurrentlyHeld = false;
         activePointerIds.Clear();
+        LastControllerReleaseUtc = System.DateTime.UtcNow;
+        LastControllerReleasePosition = transform.position;
         Debug.Log($"[InteractionTracker] Object {gameObject.name} released.");
         AddRecentEvent("release", interactor != null ? interactor.name : "");
     }
@@ -179,6 +185,11 @@ public class InteractionTracker : MonoBehaviour
         {
             activePointerIds.Remove(evt.Identifier);
             isCurrentlyHeld = activePointerIds.Count > 0;
+            if (!isCurrentlyHeld)
+            {
+                LastControllerReleaseUtc = System.DateTime.UtcNow;
+                LastControllerReleasePosition = transform.position;
+            }
             AddRecentEvent("release", evt.Identifier.ToString());
         }
     }

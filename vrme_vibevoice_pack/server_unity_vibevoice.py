@@ -856,12 +856,19 @@ async def generate_reply(
 
     if "[SYSTEM_ATTENTION_REMINDER]" in user_text:
         log("[ATTENTION_REMINDER] Returning deterministic reminder without an LLM call.")
+        if "[TUTORIAL_MOVEMENT_INVITATION]" in user_text:
+            return "I'm over here. Please move around and come a little closer to me. If you don't know how to move, held the A button on your right controller and talk to me."
         return "Hi, I'm here."
 
     auto_briefing = build_exact_auto_task_briefing(user_text, scene_context, avatar_condition)
     if auto_briefing:
         log(f"[AUTO_BRIEFING] Exact task intro from scene context. context_chars={len(scene_context or '')}, reply={auto_briefing}")
         return auto_briefing
+
+    tutorial_stage_reply = build_exact_tutorial_stage_reply(user_text)
+    if tutorial_stage_reply:
+        log(f"[TUTORIAL_STAGE] Exact tutorial stage line. reply={tutorial_stage_reply}")
+        return tutorial_stage_reply
 
     stage_progress_reply = build_exact_stage_progress_reply(user_text, avatar_condition)
     if stage_progress_reply:
@@ -1673,6 +1680,8 @@ def build_exact_auto_task_briefing(
     task_match = re.search(r"^Task:\s*(.+)$", user_text, re.MULTILINE)
     scene = scene_match.group(1).strip() if scene_match else "this"
     task = task_match.group(1).strip() if task_match else "use the highlighted object with the highlighted target"
+    if normalized_scene_name(scene) == "tutorialinteraction":
+        return "Hi, welcome! Take a moment to look at the objects in front of you, and please tell me what is in front of you."
     if task:
         task = task.rstrip(".!? ")
         task = task[0].lower() + task[1:]
@@ -1686,6 +1695,135 @@ def build_exact_auto_task_briefing(
         task_sentence = task[0].upper() + task[1:] if task else task
         return f"Location: {scene}. {task_sentence}."
     return f"You are in the {scene} scene. Task: {task}"
+
+
+def build_exact_tutorial_stage_reply(user_text: str) -> str:
+    if "[SYSTEM_TUTORIAL_STAGE]" not in user_text:
+        return ""
+    stage_match = re.search(r"^Stage:\s*(.+)$", user_text, re.MULTILINE)
+    stage = stage_match.group(1).strip().lower() if stage_match else ""
+    if stage == "choose_second":
+        return (
+            "Nice—you tried it. When you're ready, choose a different object, keep holding it, and tell me one way it looks or feels "
+            "different from the first one."
+        )
+    return ""
+
+
+def _tutorial_context_value(scene_context: str, key: str, fallback: str = "") -> str:
+    match = re.search(rf"^{re.escape(key)}=(.*)$", scene_context or "", re.MULTILINE)
+    return match.group(1).strip() if match else fallback
+
+
+def _meaningful_tutorial_response(user_text: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", (user_text or "").lower()).strip()
+    return bool(normalized) and normalized not in {"inaudible", "silence", "no speech", "unintelligible"}
+
+
+def _tutorial_exit_requested(user_text: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", (user_text or "").lower()).strip()
+    return any(phrase in normalized for phrase in (
+        "how do i exit", "how can i exit", "how do i leave", "how can i leave", "how do i get out",
+        "where is the exit", "where is exit", "can i leave", "finish the tutorial", "end the tutorial",
+        "退出", "离开", "出口",
+    ))
+
+
+def _tutorial_movement_help_requested(user_text: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", (user_text or "").lower()).strip()
+    return any(phrase in normalized for phrase in (
+        "how do i move", "how can i move", "how do i throw", "how can i throw",
+        "how do i let go", "how can i let go", "how do i release", "how can i release",
+        "i don t know how", "i do not know how", "not sure how", "can t move", "cannot move",
+        "怎么移动", "怎么动", "不知道怎么", "怎么扔", "怎么放开", "怎么松手",
+    ))
+
+
+def _tutorial_locomotion_help_requested(user_text: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", (user_text or "").lower()).strip()
+    if any(phrase in normalized for phrase in (
+        "how do i move", "how can i move", "how do i walk", "how can i walk",
+        "how do i get there", "how can i get there", "how do i come over", "which joystick",
+        "can i move to you", "move to you", "come to you", "get to you",
+        "move closer", "come closer", "get closer", "move over there", "come over there",
+        "怎么移动", "怎么走", "怎么过去", "哪个摇杆", "如何移动", "如何走",
+    )):
+        return True
+    words = set(normalized.split())
+    return bool(words & {"move", "walk", "come", "get"}) and bool(words & {"you", "there", "closer", "over"})
+
+
+def _tutorial_locomotion_help_reply() -> str:
+    return (
+        "Push the joystick forward to move. Gently move it left or right to change direction and come closer to me."
+    )
+
+
+def _tutorial_movement_help_reply() -> str:
+    return (
+        "Keep holding the grip button while you move your hand. When you want to let the object go, "
+        "release the grip button. What would you like to try?"
+    )
+
+
+def build_exact_tutorial_control_result(user_text: str, scene_name: str, scene_context: str) -> dict | None:
+    if normalized_scene_name(scene_name) != "tutorialinteraction" or "[SYSTEM_" in (user_text or ""):
+        return None
+
+    stage = _tutorial_context_value(scene_context, "stage", "Inactive")
+    held_throughout = _tutorial_context_value(scene_context, "heldThroughoutVoiceTurn", "False").lower() == "true"
+    held_object = _tutorial_context_value(scene_context, "heldObjectKey", "none")
+    first_object = _tutorial_context_value(scene_context, "firstObjectKey", "none")
+    if not _meaningful_tutorial_response(user_text):
+        return {"reply": "I didn't quite catch that. Please try telling me again when you're ready.", "action": "", "objectKey": ""}
+    if _tutorial_exit_requested(user_text):
+        return {
+            "reply": "We'll make the Exit available after you explore two different objects with me. Let's continue with this step first.",
+            "action": "", "objectKey": "",
+        }
+
+    if stage in {"Inactive", "AwaitingInitialDescription"} and _tutorial_locomotion_help_requested(user_text):
+        return {"reply": _tutorial_locomotion_help_reply(), "action": "", "objectKey": ""}
+
+    if stage == "AwaitingInitialDescription":
+        return {
+            "reply": "Thank you! Please choose one object, pick it up, keep holding it, and tell me what color it looks like to you—or describe another visual detail you notice.",
+            "action": "initial_description_received", "objectKey": "",
+        }
+    if stage == "AwaitingFirstHeldDescription":
+        if not held_throughout or held_object == "none":
+            return {"reply": "That's okay—please pick up one of the objects and keep holding it while you tell me about it.", "action": "", "objectKey": ""}
+        return {"reply": "Nice! While you're still holding it, how would you describe its shape?", "action": "first_visual_description_received", "objectKey": held_object}
+    if stage == "AwaitingFirstShapeDescription":
+        if not held_throughout or held_object == "none" or held_object.lower() != first_object.lower():
+            return {"reply": "Please pick up the same object again and keep holding it while you describe its shape.", "action": "", "objectKey": ""}
+        return {"reply": "Before you move it or let it go, please keep holding it and tell me—what would you like to do with it?", "action": "first_shape_response_received", "objectKey": held_object}
+    if stage == "AwaitingFirstActionChoice":
+        if not held_throughout or held_object == "none" or held_object.lower() != first_object.lower():
+            return {"reply": "Please hold that first object again while you tell me what you'd like to do with it.", "action": "", "objectKey": ""}
+        if _tutorial_movement_help_requested(user_text):
+            return {"reply": _tutorial_movement_help_reply(), "action": "", "objectKey": ""}
+        return {"reply": "That sounds good—go ahead and move it around, or let it go and see what happens.", "action": "first_action_choice_received", "objectKey": held_object}
+    if stage == "AwaitingFirstInteraction":
+        if _tutorial_movement_help_requested(user_text):
+            return {"reply": _tutorial_movement_help_reply(), "action": "", "objectKey": ""}
+        return {"reply": "Go ahead and try moving the first object around, or let it go when you're ready.", "action": "", "objectKey": ""}
+    if stage == "AwaitingSecondHeldDescription":
+        if not held_throughout or held_object == "none":
+            return {"reply": "Please choose a different object and keep holding it while you tell me how it differs from the first one.", "action": "", "objectKey": ""}
+        if held_object.lower() == first_object.lower():
+            return {"reply": "You've picked up the first object again. Please choose a different one and tell me what you notice.", "action": "", "objectKey": ""}
+        return {
+            "reply": "Lovely—you've explored two different objects. When you're ready, teleport to the highlighted Exit position, or feel free to keep exploring and asking questions to me.",
+            "action": "second_description_received", "objectKey": held_object,
+        }
+    return None
+
+
+def build_exact_tutorial_exit_help_reply(user_text: str, scene_name: str, scene_context: str = "") -> str:
+    if normalized_scene_name(scene_name) != "tutorialinteraction" or _tutorial_context_value(scene_context, "stage", "Inactive") != "Complete":
+        return ""
+    return "Of course—when you're ready, use the thumbstick to teleport to the highlighted Exit position." if _tutorial_exit_requested(user_text) else ""
 
 
 # Per-scene phrasing for what to do once the participant is holding the
@@ -1758,6 +1896,14 @@ STAGE_COMPLETE_REPLY = {
 def build_exact_stage_complete_reply(user_text: str, avatar_condition: str | None = None) -> str:
     if "[SYSTEM_STAGE_COMPLETE]" not in user_text:
         return ""
+
+    scene_match = re.search(r"^Scene:\s*(.+)$", user_text, re.MULTILINE)
+    scene_name = scene_match.group(1).strip() if scene_match else ""
+    if normalized_scene_name(scene_name) == "tutorialinteraction":
+        return (
+            "Nice exploring! You've discovered how these shapes respond when you pick them up and let them go. "
+            "You can keep trying any of them, or use the thumbstick to move to the Exit when you're ready."
+        )
 
     tone_name = backend_selected_tone(avatar_condition)["name"]
     return STAGE_COMPLETE_REPLY.get(
@@ -2833,8 +2979,42 @@ async def websocket_endpoint(websocket: WebSocket):
             if request_start_at is None:
                 request_start_at = time.time()
 
-            if "[SYSTEM_AUTO_TASK_BRIEFING]" in user_text:
+            tutorial_exit_help_reply = build_exact_tutorial_exit_help_reply(
+                user_text,
+                client_metadata.get("sceneName", ""),
+                scene_context,
+            )
+            tutorial_control_result = None if tutorial_exit_help_reply else build_exact_tutorial_control_result(
+                user_text,
+                client_metadata.get("sceneName", ""),
+                scene_context,
+            )
+            if tutorial_exit_help_reply:
+                response_source = "tutorial_exit_help"
+                highlight_payload = json.dumps(
+                    {"type": "tutorial_exit_highlight"},
+                    ensure_ascii=False,
+                )
+                if not await safe_send_text(websocket, highlight_payload, "tutorial_exit_highlight"):
+                    break
+            elif tutorial_control_result:
+                response_source = "tutorial_control"
+                tutorial_action = tutorial_control_result.get("action", "")
+                if tutorial_action:
+                    control_payload = json.dumps(
+                        {
+                            "type": "tutorial_control",
+                            "action": tutorial_action,
+                            "objectKey": tutorial_control_result.get("objectKey", ""),
+                        },
+                        ensure_ascii=False,
+                    )
+                    if not await safe_send_text(websocket, control_payload, "tutorial_control"):
+                        break
+            elif "[SYSTEM_AUTO_TASK_BRIEFING]" in user_text:
                 response_source = "auto_briefing"
+            elif "[SYSTEM_TUTORIAL_STAGE]" in user_text:
+                response_source = "tutorial_stage"
             elif "[SYSTEM_STAGE_PROGRESS]" in user_text:
                 response_source = "stage_progress"
             elif "[SYSTEM_STAGE_COMPLETE]" in user_text:
@@ -2856,7 +3036,13 @@ async def websocket_endpoint(websocket: WebSocket):
             log(f"User: {user_text}")
             try:
                 llm_start_at = time.time()
-                if "[SYSTEM_AUTO_TASK_BRIEFING]" not in user_text and is_short_grounding_turn(user_text):
+                if tutorial_exit_help_reply:
+                    reply = tutorial_exit_help_reply
+                    log(f"[TUTORIAL_EXIT_HELP] Exact exit guidance used. reply={reply}")
+                elif tutorial_control_result:
+                    reply = tutorial_control_result["reply"]
+                    log(f"[TUTORIAL_CONTROL] Exact controlled reply used. action={tutorial_control_result.get('action', '')}, reply={reply}")
+                elif "[SYSTEM_" not in user_text and is_short_grounding_turn(user_text):
                     reply = build_current_turn_grounded_reply(
                         scene_context,
                         client_metadata.get("avatarCondition"),

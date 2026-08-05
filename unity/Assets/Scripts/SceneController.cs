@@ -67,6 +67,13 @@ public class SceneController : MonoBehaviour
             return;
         }
 
+        // Tutorial_Interaction is unlocked explicitly after two distinct
+        // held-object voice checkpoints; its timer must not bypass that flow.
+        if (string.Equals(SceneManager.GetActiveScene().name, "Tutorial_Interaction", System.StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         // Count down.
         countdownTimerSeconds -= Time.deltaTime;
         // Debug.Log(string.Format("[Timer] {0}", countdownTimerSeconds));
@@ -106,6 +113,24 @@ public class SceneController : MonoBehaviour
         
         // Check if the isUsed flag of each object in the list is true
         return requiredInteractables.All(interactable => interactable != null && interactable.isUsed);
+    }
+
+    public void UnlockExitForTutorial()
+    {
+        if (!string.Equals(SceneManager.GetActiveScene().name, "Tutorial_Interaction", System.StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        sceneConditionsMet = true;
+        if (doorAnimator != null)
+        {
+            doorAnimator.SetBool("openExitDoor", true);
+        }
+
+        // The tutorial uses a runtime glow around the teleport anchor. Do not
+        // reactivate the legacy arrow or its text canvas here.
+        Debug.Log("[Tutorial] Exit unlocked without legacy arrow/text guidance.");
     }
 
     // Start emotion survey.

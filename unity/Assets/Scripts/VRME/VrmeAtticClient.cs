@@ -33,7 +33,7 @@ public class VrmeAtticClient : MonoBehaviour
     public bool autoDiscoverSceneObjectsForContext = false;
     public bool sendLiveContextOnlyForVoiceTurn = true;
     [Tooltip("Comma-separated object name hints used when InteractionTracker components are not present.")]
-    public string sceneObjectNameHints = "HandTorch,Flashlight,Torch,Shield,Shield01,Airplane,Plane,Stone,Rock,Banana,Fruit,Elephant,Dog,Puppy,Ball,Baseball,Book,Cup,Telescope,ManScreaming,Man,Gun,Sign,Door,Handle,Bar,Key,Switch,Button,Lever,Panel,Light,Exit";
+    public string sceneObjectNameHints = "BlueCube,Cube,TriangularPrism,Prism,Cylinder,HandTorch,Flashlight,Torch,Shield,Shield01,Airplane,Plane,Stone,Rock,Banana,Fruit,Elephant,Dog,Puppy,Ball,Baseball,Book,Cup,Telescope,ManScreaming,Man,Gun,Sign,Door,Handle,Bar,Key,Switch,Button,Lever,Panel,Light,Exit";
     [Tooltip("Comma-separated object/script name hints used to mark the conversational avatar as a social attention target.")]
     public string avatarObjectNameHints = "Rocketbox,ReadyPlayerMe,DigitalHuman,SocialAgent,CompanionAvatar";
     [Range(1, 40)] public int maxDiscoveredSceneObjects = 20;
@@ -71,6 +71,7 @@ public class VrmeAtticClient : MonoBehaviour
     [Tooltip("Repeat the short 'Hi, I'm here' attention-getter at this interval for as long as the participant still has not looked at the avatar.")]
     public bool enableAutoIntroAttentionReminder = true;
     [Range(10f, 120f)] public float autoIntroAttentionReminderDelaySeconds = 30f;
+    private const float TutorialInitialAttentionReminderSeconds = 3f;
     [Range(5f, 120f)] public float textPromptReplyTimeoutSeconds = 60f;
     [TextArea(3, 8)] public string autoIntroPrompt =
         "Greet the participant briefly in one short sentence, in whatever style fits the selected avatar condition, then ask them to describe in their own words what they notice around them. Keep it to one short open question. Do not mention any task, objective, goal, or specific interactive object.";
@@ -113,6 +114,12 @@ public class VrmeAtticClient : MonoBehaviour
     private readonly List<GameObject> activeGuidedTaskObjects = new List<GameObject>();
     private readonly List<GameObject> activeGuidedTaskTargets = new List<GameObject>();
     private readonly List<GameObject> activeGuidedTaskMarkers = new List<GameObject>();
+    private GameObject tutorialExitHighlightMarker;
+    private TutorialControlStage tutorialControlStage = TutorialControlStage.Inactive;
+    private string tutorialFirstObjectKey = "";
+    private string tutorialVoiceHeldAtStartKey = "";
+    private DateTime tutorialFirstInteractionArmedAtUtc = DateTime.MinValue;
+    private Vector3 tutorialFirstInteractionStartPosition;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetPersistentConnectionForPlaySession()
@@ -334,12 +341,21 @@ public class VrmeAtticClient : MonoBehaviour
         recordKeyWasDown = recordInputIsDown;
         streamingPlayer?.Update();
         CheckGuidedTaskProgress();
+        CheckTutorialControlledInteraction();
         CheckGuidedTaskCompletion();
     }
 
     private void CheckGuidedTaskProgress()
     {
         if (!guidedTaskActive || guidedTaskCompleted || guidedTaskProgressSent || activeGuidedTaskSpec == null)
+        {
+            return;
+        }
+
+        // Tutorial exploration is intentionally discovery-led. Do not interrupt
+        // the participant with the old automatic "now throw the blue cube" line
+        // when they first pick up one of the shapes.
+        if (IsTutorialScene())
         {
             return;
         }
@@ -351,8 +367,10 @@ public class VrmeAtticClient : MonoBehaviour
                 continue;
             }
 
-            InteractionTracker tracker = taskObject.GetComponent<InteractionTracker>();
-            if (tracker != null && tracker.isUsed)
+            InteractionTracker tracker = ResolveTaskObjectTracker(taskObject);
+            bool hasReachedGrabStage = tracker != null &&
+                (IsTutorialScene() ? tracker.wasGrabbedByController : tracker.isUsed);
+            if (hasReachedGrabStage)
             {
                 guidedTaskProgressSent = true;
                 string sceneName = SceneManager.GetActiveScene().name;
@@ -504,7 +522,10 @@ public class VrmeAtticClient : MonoBehaviour
 
     private string BuildTurnContextString(
         string voiceAttentionSummary = null,
-        string voiceRuntimeContext = null)
+        string voiceRuntimeContext = null,
+        bool hasTutorialVoiceSnapshot = false,
+        string tutorialHeldAtVoiceStartKey = "",
+        string tutorialHeldAtVoiceEndKey = "")
     {
         using (var writer = new StringWriter())
         {
@@ -545,6 +566,21 @@ public class VrmeAtticClient : MonoBehaviour
                     player != null ? player.position : Vector3.zero));
             }
 
+            if (IsTutorialScene())
+            {
+                bool heldThroughout = hasTutorialVoiceSnapshot &&
+                    !string.IsNullOrWhiteSpace(tutorialHeldAtVoiceStartKey) &&
+                    string.Equals(tutorialHeldAtVoiceStartKey, tutorialHeldAtVoiceEndKey, StringComparison.OrdinalIgnoreCase);
+                writer.WriteLine("[TUTORIAL_CONTROL_STATE]");
+                writer.WriteLine("stage=" + tutorialControlStage);
+                writer.WriteLine("firstObjectKey=" + (string.IsNullOrWhiteSpace(tutorialFirstObjectKey) ? "none" : tutorialFirstObjectKey));
+                writer.WriteLine("voiceSnapshot=" + (hasTutorialVoiceSnapshot ? "available" : "unavailable"));
+                writer.WriteLine("heldThroughoutVoiceTurn=" + (hasTutorialVoiceSnapshot ? heldThroughout.ToString() : "unknown"));
+                writer.WriteLine("heldObjectKey=" + (heldThroughout ? tutorialHeldAtVoiceEndKey : "none"));
+                writer.WriteLine("instruction_for_avatar=Follow the fixed tutorial stage. Color and shape descriptions are never graded for correctness; only a meaningful voice response while the required object remains held advances a held-object stage.");
+                writer.WriteLine("[/TUTORIAL_CONTROL_STATE]");
+            }
+
             return writer.ToString().TrimEnd();
         }
     }
@@ -579,7 +615,7 @@ public class VrmeAtticClient : MonoBehaviour
         switch (normalizedName)
         {
             case "tutorial_interaction":
-                return "A VR interaction tutorial. The participant can practice grabbing and throwing the blue cubes, speak to the nearby avatar by holding the right-controller A button, and finish at the marked Exit.";
+                return "A VR interaction tutorial with two blue cubes, a triangular prism, and a cylinder placed together as equal exploration choices. All four objects share the same simple physics interaction: they can be picked up with the grip button, moved, released, and thrown. The participant should be warmly invited to discover this interaction with any shape without singling out a preferred object or immediately commanding a throw. They can speak to the nearby avatar by holding the right-controller A button and finish at the marked Exit.";
             case "lake":
                 return "A jetty in front of a stone house by a calm lake, with hills covered by trees and grass. At the end of the jetty there are two stones and two paper planes. Stones can be grabbed and thrown into the lake, producing splash sounds and visible ripples on the water surface. Paper planes can also be picked up and thrown, with a visible trajectory during flight. This is background knowledge only, never volunteered. Naming an object the participant already named or is looking at is fine, but the interaction/function described here (what it can be used for or how) may only be revealed if the participant explicitly asks what they can do, what something is for, or otherwise clearly asks for help — merely naming or describing an object is not enough to unlock its function.";
             case "attic":
@@ -642,7 +678,20 @@ public class VrmeAtticClient : MonoBehaviour
             return true;
         }
 
-        string identity = (tracker.ContextName + " " + tracker.gameObject.name).ToLowerInvariant();
+        // Semantic object trackers are attached to the actual Oculus HandGrab
+        // node so their held state comes from real selection events. An explicit
+        // displayName (for example "blue cube") makes that tracker conversational
+        // even though its implementation GameObject has a system-looking name.
+        if (!string.IsNullOrWhiteSpace(tracker.displayName))
+        {
+            return ContainsSystemTrackerIdentity(tracker.displayName.ToLowerInvariant());
+        }
+
+        return ContainsSystemTrackerIdentity(tracker.gameObject.name.ToLowerInvariant());
+    }
+
+    private static bool ContainsSystemTrackerIdentity(string identity)
+    {
         return identity.Contains("[buildingblock] handgrab") ||
                identity.Contains("controllergrablocation") ||
                identity.Contains("controller interactor") ||
@@ -713,6 +762,7 @@ public class VrmeAtticClient : MonoBehaviour
         recordingClip = Microphone.Start(null, false, maxRecordSeconds, sampleRate);
         isRecording = true;
         voiceTurnStartedAtUtc = DateTime.UtcNow;
+        tutorialVoiceHeldAtStartKey = IsTutorialScene() ? GetSingleHeldTutorialObjectKey() : "";
         CameraPoseSender.BeginVoiceSampling();
         Debug.Log("[VRME] Recording started. Release " + GetRecordInputLabel() + " to send." + (isSending ? " Current reply is still finishing; this turn will queue." : ""));
     }
@@ -742,7 +792,14 @@ public class VrmeAtticClient : MonoBehaviour
         CameraPoseSender.ConsumeLatestVoiceContext(
             out string voiceAttentionSummary,
             out string voiceRuntimeContext);
-        string capturedTurnContext = BuildTurnContextString(voiceAttentionSummary, voiceRuntimeContext);
+        string tutorialHeldAtVoiceEndKey = IsTutorialScene() ? GetSingleHeldTutorialObjectKey() : "";
+        string capturedTurnContext = BuildTurnContextString(
+            voiceAttentionSummary,
+            voiceRuntimeContext,
+            hasTutorialVoiceSnapshot: IsTutorialScene(),
+            tutorialHeldAtVoiceStartKey: tutorialVoiceHeldAtStartKey,
+            tutorialHeldAtVoiceEndKey: tutorialHeldAtVoiceEndKey);
+        tutorialVoiceHeldAtStartKey = "";
         InteractionTracker.ClearRecentEvents();
         Debug.Log("[VRME] Consumed and cleared the current User Trigger perception window.");
 
@@ -807,7 +864,7 @@ public class VrmeAtticClient : MonoBehaviour
         // audible playback is held back for the gaze gate below, so this only
         // hides latency; it never makes the avatar speak before the
         // participant is actually looking at it.
-        bool gazeGateActive = !isTutorial && requireAvatarAttentionBeforeAutoIntro;
+        bool gazeGateActive = requireAvatarAttentionBeforeAutoIntro;
         if (gazeGateActive)
         {
             autoIntroPlaybackHeld = true;
@@ -815,12 +872,6 @@ public class VrmeAtticClient : MonoBehaviour
         }
 
         Task sendTask = SendAutoIntroRequestLoopAsync(introPrompt);
-
-        if (isTutorial)
-        {
-            await sendTask;
-            return;
-        }
 
         bool attentionSatisfied = await WaitForAvatarAttentionBeforeAutoIntroAsync();
         if (!attentionSatisfied)
@@ -946,8 +997,12 @@ public class VrmeAtticClient : MonoBehaviour
         // speak the full briefing. We only ever nudge with a short "Hi, I'm here"
         // so the real introduction is never heard before they're actually
         // looking (which would be startling and easy to miss/mishear).
-        float nextReminderAttemptAt = sceneStartedAtRealtime +
-            Mathf.Max(0f, autoIntroMaximumAttentionWaitSeconds);
+        // Tutorial gives the participant three seconds from the moment its
+        // attention gate starts. Formal scenes retain their configured wait.
+        float initialReminderDelay = IsTutorialScene()
+            ? TutorialInitialAttentionReminderSeconds
+            : Mathf.Max(0f, autoIntroMaximumAttentionWaitSeconds);
+        float nextReminderAttemptAt = Time.realtimeSinceStartup + initialReminderDelay;
 
         // Deliberately does not also check !autoIntroSent here: that flag flips true
         // as soon as the parallel prefetch request finishes sending, which usually
@@ -969,6 +1024,10 @@ public class VrmeAtticClient : MonoBehaviour
                     accumulatedSeconds.ToString("0.0") +
                     ", windowSeconds=" + windowSeconds.ToString("0.0") +
                     ", hitSamples=" + hitSampleCount + ".");
+                if (IsTutorialScene())
+                {
+                    await WaitForCurrentReplyBeforeTutorialIntroAsync();
+                }
                 return true;
             }
 
@@ -976,11 +1035,17 @@ public class VrmeAtticClient : MonoBehaviour
                 Time.realtimeSinceStartup >= nextReminderAttemptAt)
             {
                 Debug.Log("[VRME] Avatar-attention gate is still unmet; sending a short attention-getter and continuing to wait for gaze.");
+                string reminderPrompt = IsTutorialScene()
+                    ? "[SYSTEM_ATTENTION_REMINDER]\n" +
+                      "[TUTORIAL_MOVEMENT_INVITATION]\n" +
+                      "Say exactly this and nothing else: I'm over here. Please move around and come a little closer to me.\n" +
+                      "[/SYSTEM_ATTENTION_REMINDER]"
+                    : "[SYSTEM_ATTENTION_REMINDER]\n" +
+                      "Say exactly this one short sentence and nothing else: Hi, I'm here.\n" +
+                      "Do not introduce the task, mention highlights, or ask a question.\n" +
+                      "[/SYSTEM_ATTENTION_REMINDER]";
                 bool reminderSent = await SendTextPromptAsync(
-                    "[SYSTEM_ATTENTION_REMINDER]\n" +
-                    "Say exactly this one short sentence and nothing else: Hi, I'm here.\n" +
-                    "Do not introduce the task, mention highlights, or ask a question.\n" +
-                    "[/SYSTEM_ATTENTION_REMINDER]",
+                    reminderPrompt,
                     "attention_reminder");
                 nextReminderAttemptAt = Time.realtimeSinceStartup + (reminderSent
                     ? Mathf.Max(10f, autoIntroAttentionReminderDelaySeconds)
@@ -1011,7 +1076,10 @@ public class VrmeAtticClient : MonoBehaviour
             bool firstUiStillVisible = false;
             foreach (ToSetup setupScreen in setupScreens)
             {
-                if (setupScreen != null && setupScreen.gameObject.activeInHierarchy)
+                // SetupModule itself intentionally remains active because it owns
+                // CameraPoseSender. Wait only for its participant-ID controls,
+                // which ToSetup hides after a successful submission.
+                if (setupScreen != null && setupScreen.IsParticipantInputVisible)
                 {
                     firstUiStillVisible = true;
                     break;
@@ -1067,7 +1135,7 @@ public class VrmeAtticClient : MonoBehaviour
         switch (normalizedName)
         {
             case "tutorial_interaction":
-                return "Hold the right-controller A button to speak with the nearby avatar, then practice grabbing and throwing a blue cube. To finish, use the controller thumbstick to move to the marked Exit position; do not physically walk there.";
+                return "discover how the shapes respond by using the grip button to pick up any one of them, moving it around, and letting it go";
             // The six formal emotion scenes intentionally have no spoken task objective:
             // the interaction each scene affords is discoverable background knowledge
             // (see GetSceneDescription) that the avatar may only speak to reactively,
@@ -1076,6 +1144,317 @@ public class VrmeAtticClient : MonoBehaviour
             default:
                 return "";
         }
+    }
+
+    private string GetSingleHeldTutorialObjectKey()
+    {
+        string heldKey = "";
+        int heldCount = 0;
+        foreach (GameObject taskObject in activeGuidedTaskObjects)
+        {
+            InteractionTracker tracker = ResolveTaskObjectTracker(taskObject);
+            if (tracker == null)
+            {
+                continue;
+            }
+
+            tracker.RefreshCurrentHeldState();
+            if (!tracker.isCurrentlyHeld)
+            {
+                continue;
+            }
+
+            heldCount++;
+            heldKey = tracker.ContextName;
+        }
+
+        return heldCount == 1 ? heldKey : "";
+    }
+
+    private InteractionTracker FindTutorialTrackerByKey(string objectKey)
+    {
+        if (string.IsNullOrWhiteSpace(objectKey))
+        {
+            return null;
+        }
+
+        foreach (GameObject taskObject in activeGuidedTaskObjects)
+        {
+            InteractionTracker tracker = ResolveTaskObjectTracker(taskObject);
+            if (tracker != null && string.Equals(tracker.ContextName, objectKey, StringComparison.OrdinalIgnoreCase))
+            {
+                return tracker;
+            }
+        }
+
+        return null;
+    }
+
+    private void ApplyTutorialControlEvent(string actionName, string objectKey)
+    {
+        if (!IsTutorialScene() || string.IsNullOrWhiteSpace(actionName))
+        {
+            return;
+        }
+
+        switch (actionName.Trim().ToLowerInvariant())
+        {
+            case "initial_description_received":
+                if (tutorialControlStage == TutorialControlStage.AwaitingInitialDescription)
+                {
+                    tutorialControlStage = TutorialControlStage.AwaitingFirstHeldDescription;
+                }
+                break;
+            case "first_visual_description_received":
+                if (tutorialControlStage == TutorialControlStage.AwaitingFirstHeldDescription &&
+                    FindTutorialTrackerByKey(objectKey) != null)
+                {
+                    tutorialFirstObjectKey = objectKey;
+                    tutorialControlStage = TutorialControlStage.AwaitingFirstShapeDescription;
+                }
+                break;
+            case "first_shape_response_received":
+                if (tutorialControlStage == TutorialControlStage.AwaitingFirstShapeDescription &&
+                    string.Equals(objectKey, tutorialFirstObjectKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    tutorialControlStage = TutorialControlStage.AwaitingFirstActionChoice;
+                }
+                break;
+            case "first_action_choice_received":
+                if (tutorialControlStage == TutorialControlStage.AwaitingFirstActionChoice &&
+                    string.Equals(objectKey, tutorialFirstObjectKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    InteractionTracker tracker = FindTutorialTrackerByKey(tutorialFirstObjectKey);
+                    if (tracker != null)
+                    {
+                        tutorialFirstInteractionStartPosition = tracker.transform.position;
+                        tutorialFirstInteractionArmedAtUtc = DateTime.UtcNow;
+                        tutorialControlStage = TutorialControlStage.AwaitingFirstInteraction;
+                    }
+                }
+                break;
+            case "second_description_received":
+                if (tutorialControlStage == TutorialControlStage.AwaitingSecondHeldDescription &&
+                    FindTutorialTrackerByKey(objectKey) != null &&
+                    !string.Equals(objectKey, tutorialFirstObjectKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    CompleteTutorialControlledFlow();
+                }
+                break;
+        }
+
+        Debug.Log("[VRME] Tutorial control event applied. action=" + actionName +
+            ", object=" + objectKey + ", stage=" + tutorialControlStage);
+    }
+
+    private void CheckTutorialControlledInteraction()
+    {
+        if (!IsTutorialScene() || tutorialControlStage != TutorialControlStage.AwaitingFirstInteraction)
+        {
+            return;
+        }
+
+        InteractionTracker tracker = FindTutorialTrackerByKey(tutorialFirstObjectKey);
+        if (tracker == null)
+        {
+            return;
+        }
+
+        tracker.RefreshCurrentHeldState();
+        bool releasedAfterPrompt = tracker.LastControllerReleaseUtc != DateTime.MinValue &&
+            tracker.LastControllerReleaseUtc >= tutorialFirstInteractionArmedAtUtc;
+        bool movedAfterPrompt = Vector3.Distance(tracker.transform.position, tutorialFirstInteractionStartPosition) >= 0.18f;
+        if (!releasedAfterPrompt && !movedAfterPrompt)
+        {
+            return;
+        }
+
+        tutorialControlStage = TutorialControlStage.AwaitingSecondHeldDescription;
+        Debug.Log("[VRME] Tutorial first-object interaction confirmed. released=" + releasedAfterPrompt +
+            ", moved=" + movedAfterPrompt + ", object=" + tutorialFirstObjectKey);
+        _ = SendTutorialStagePromptAsync("choose_second");
+    }
+
+    private void CompleteTutorialControlledFlow()
+    {
+        tutorialControlStage = TutorialControlStage.Complete;
+        guidedTaskCompleted = true;
+        guidedTaskActive = false;
+        ClearGuidedTaskHighlights();
+
+        SceneController[] controllers = FindObjectsByType<SceneController>(FindObjectsSortMode.None);
+        foreach (SceneController controller in controllers)
+        {
+            if (controller != null)
+            {
+                controller.UnlockExitForTutorial();
+            }
+        }
+
+        ShowTutorialExitHighlight();
+        Debug.Log("[VRME] Tutorial controlled flow completed after two distinct held-object voice descriptions.");
+    }
+
+    private static bool IsTutorialScene()
+    {
+        return string.Equals(
+            SceneManager.GetActiveScene().name,
+            "Tutorial_Interaction",
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void EnsureTutorialTargets()
+    {
+        if (!IsTutorialScene())
+        {
+            return;
+        }
+
+        Transform viewer = Camera.main != null ? Camera.main.transform : ResolvePlayerTransform();
+        Vector3 origin = viewer != null ? viewer.position : transform.position;
+        Vector3 forward = viewer != null ? viewer.forward : transform.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.01f)
+        {
+            forward = Vector3.forward;
+        }
+        forward.Normalize();
+        Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
+        Vector3 targetCenter = origin + forward * 3.2f;
+        targetCenter = ProjectPointToWalkableGround(targetCenter, origin) + Vector3.up * 0.13f;
+        float sideOffset = 0.72f;
+        GameObject firstCube = FindExactSceneObject("BlueCube");
+        GameObject secondCube = FindExactSceneObject("BlueCube (1)");
+        if (firstCube != null && secondCube != null)
+        {
+            Vector3 cubeAxis = secondCube.transform.position - firstCube.transform.position;
+            cubeAxis.y = 0f;
+            if (cubeAxis.sqrMagnitude > 0.01f)
+            {
+                right = cubeAxis.normalized;
+            }
+            targetCenter = (firstCube.transform.position + secondCube.transform.position) * 0.5f;
+        }
+        Quaternion faceViewer = Quaternion.LookRotation(-forward, Vector3.up);
+
+        CreateTutorialShapeTarget(
+            "Tutorial Triangular Prism Target",
+            targetCenter - right * sideOffset,
+            faceViewer,
+            CreateTriangularPrismMesh(),
+            new Color(1f, 0.43f, 0.25f, 1f));
+        CreateTutorialShapeTarget(
+            "Tutorial Cylinder Target",
+            targetCenter + right * sideOffset,
+            faceViewer,
+            CreateCylinderMesh(40),
+            new Color(0.12f, 0.75f, 1f, 1f));
+    }
+
+    private static void CreateTutorialShapeTarget(
+        string objectName,
+        Vector3 position,
+        Quaternion rotation,
+        Mesh mesh,
+        Color color)
+    {
+        GameObject existing = GameObject.Find(objectName);
+        if (existing != null)
+        {
+            return;
+        }
+
+        GameObject target = new GameObject(objectName);
+        target.transform.SetPositionAndRotation(position, rotation);
+        target.transform.localScale = objectName.IndexOf("Cylinder", StringComparison.OrdinalIgnoreCase) >= 0
+            ? Vector3.one * 0.22f
+            : Vector3.one * 0.21f;
+
+        MeshFilter filter = target.AddComponent<MeshFilter>();
+        filter.sharedMesh = mesh;
+        MeshRenderer renderer = target.AddComponent<MeshRenderer>();
+        Shader shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Standard");
+        Material material = new Material(shader);
+        material.color = color;
+        if (material.HasProperty("_BaseColor"))
+        {
+            material.SetColor("_BaseColor", color);
+        }
+        renderer.material = material;
+
+        MeshCollider solidCollider = target.AddComponent<MeshCollider>();
+        solidCollider.sharedMesh = mesh;
+        solidCollider.convex = true;
+
+        InteractionTracker tracker = target.AddComponent<InteractionTracker>();
+        tracker.displayName = objectName.Replace("Tutorial ", "");
+        tracker.attentionOnlyTarget = true;
+        tracker.trackTriggerCollisions = false;
+        Debug.Log("[Tutorial] Created " + objectName + " at " + position.ToString("F2") + ".");
+    }
+
+    private static Mesh CreateTriangularPrismMesh()
+    {
+        var mesh = new Mesh { name = "Tutorial Triangular Prism Mesh" };
+        mesh.vertices = new[]
+        {
+            new Vector3(-0.62f, -0.62f, -0.42f),
+            new Vector3(0.62f, -0.62f, -0.42f),
+            new Vector3(0f, 0.62f, -0.42f),
+            new Vector3(-0.62f, -0.62f, 0.42f),
+            new Vector3(0.62f, -0.62f, 0.42f),
+            new Vector3(0f, 0.62f, 0.42f)
+        };
+        mesh.triangles = new[]
+        {
+            0, 2, 1, 3, 4, 5,
+            0, 1, 4, 0, 4, 3,
+            1, 2, 5, 1, 5, 4,
+            2, 0, 3, 2, 3, 5
+        };
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
+    private static Mesh CreateCylinderMesh(int segments)
+    {
+        segments = Mathf.Max(12, segments);
+        var vertices = new Vector3[segments * 2 + 2];
+        var triangles = new int[segments * 12];
+        int frontCenter = segments * 2;
+        int backCenter = frontCenter + 1;
+        vertices[frontCenter] = new Vector3(0f, 0f, -0.45f);
+        vertices[backCenter] = new Vector3(0f, 0f, 0.45f);
+        for (int index = 0; index < segments; index++)
+        {
+            float radians = index * Mathf.PI * 2f / segments;
+            float x = Mathf.Cos(radians) * 0.58f;
+            float y = Mathf.Sin(radians) * 0.58f;
+            vertices[index] = new Vector3(x, y, -0.45f);
+            vertices[index + segments] = new Vector3(x, y, 0.45f);
+            int next = (index + 1) % segments;
+            int offset = index * 12;
+            triangles[offset] = frontCenter;
+            triangles[offset + 1] = next;
+            triangles[offset + 2] = index;
+            triangles[offset + 3] = backCenter;
+            triangles[offset + 4] = index + segments;
+            triangles[offset + 5] = next + segments;
+            triangles[offset + 6] = index;
+            triangles[offset + 7] = next;
+            triangles[offset + 8] = next + segments;
+            triangles[offset + 9] = index;
+            triangles[offset + 10] = next + segments;
+            triangles[offset + 11] = index + segments;
+        }
+
+        var mesh = new Mesh { name = "Tutorial Cylinder Mesh" };
+        mesh.vertices = vertices;
+        mesh.triangles = triangles;
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        return mesh;
     }
 
     private void ActivateSceneTaskHighlights()
@@ -1087,6 +1466,7 @@ public class VrmeAtticClient : MonoBehaviour
         }
 
         string sceneName = SceneManager.GetActiveScene().name;
+        EnsureTutorialTargets();
         SceneTaskHighlightSpec spec = GetSceneTaskHighlightSpec(sceneName);
         if (spec == null)
         {
@@ -1103,6 +1483,12 @@ public class VrmeAtticClient : MonoBehaviour
         guidedTaskProgressSent = false;
         guidedTaskActivatedAtUtc = DateTime.UtcNow;
         taskHighlightsActivated = true;
+        if (IsTutorialScene())
+        {
+            tutorialControlStage = TutorialControlStage.AwaitingInitialDescription;
+            tutorialFirstObjectKey = "";
+            tutorialFirstInteractionArmedAtUtc = DateTime.MinValue;
+        }
 
         int objectCount = 0;
         foreach (string objectName in spec.ObjectNames)
@@ -1127,10 +1513,11 @@ public class VrmeAtticClient : MonoBehaviour
                 continue;
             }
 
+            bool isTutorialScene = string.Equals(sceneName, "Tutorial_Interaction", StringComparison.OrdinalIgnoreCase);
             bool isPuppiesScene = string.Equals(sceneName, "Puppies", StringComparison.OrdinalIgnoreCase);
             bool isElephantScene = string.Equals(sceneName, "Elephant", StringComparison.OrdinalIgnoreCase);
             bool animalOutlineOnly = isPuppiesScene;
-            if (!animalOutlineOnly)
+            if (!animalOutlineOnly && !isTutorialScene)
             {
                 AddTargetMarker(
                     targetObject,
@@ -1186,6 +1573,21 @@ public class VrmeAtticClient : MonoBehaviour
         string normalizedName = string.IsNullOrWhiteSpace(sceneName) ? "" : sceneName.Trim().ToLowerInvariant();
         switch (normalizedName)
         {
+            case "tutorial_interaction":
+                return new SceneTaskHighlightSpec(
+                    new[]
+                    {
+                        "BlueCube",
+                        "BlueCube (1)",
+                        "Tutorial Triangular Prism Target",
+                        "Tutorial Cylinder Target"
+                    },
+                    Array.Empty<string>(),
+                    "discoverable shape interaction",
+                    GuidedTaskCompletionMode.TutorialControlledDialogue,
+                    TaskMarkerPlacement.ObjectCenter,
+                    0.8f,
+                    0.9f);
             case "puppies":
                 return new SceneTaskHighlightSpec(
                     new[] { "TennisBall" },
@@ -1589,6 +1991,91 @@ public class VrmeAtticClient : MonoBehaviour
         outline.enabled = true;
     }
 
+    private void ShowTutorialExitHighlight()
+    {
+        if (!IsTutorialScene())
+        {
+            return;
+        }
+
+        GameObject exitRoot = null;
+        GameObject exitTarget = null;
+        GameObject[] allSceneObjects = Resources.FindObjectsOfTypeAll<GameObject>();
+        foreach (GameObject candidate in allSceneObjects)
+        {
+            if (candidate == null || candidate.scene != SceneManager.GetActiveScene() ||
+                !string.Equals(candidate.name, "Arrow", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            TeleportationEventListener listener = candidate.GetComponentInChildren<TeleportationEventListener>(true);
+            if (listener != null)
+            {
+                exitRoot = candidate;
+                exitTarget = listener.gameObject;
+                break;
+            }
+        }
+
+        if (exitRoot == null || exitTarget == null)
+        {
+            Debug.LogWarning("[VRME] Tutorial Exit root/teleport anchor was not found for highlighting.");
+            return;
+        }
+
+        // The legacy Arrow root also owns the actual teleport anchor. Restore
+        // that interaction without restoring its arrow graphic or text canvas.
+        foreach (Transform child in exitRoot.transform)
+        {
+            bool containsExitTarget = child == exitTarget.transform || exitTarget.transform.IsChildOf(child);
+            child.gameObject.SetActive(containsExitTarget);
+        }
+        exitRoot.SetActive(true);
+        exitTarget.SetActive(true);
+
+        AddOutlineHighlight(exitTarget, taskTargetHighlightColor, taskObjectOutlineWidth);
+        if (tutorialExitHighlightMarker != null)
+        {
+            tutorialExitHighlightMarker.SetActive(true);
+            return;
+        }
+
+        Bounds bounds;
+        bool hasBounds = TryGetRendererBounds(exitTarget, out bounds);
+        Vector3 center = hasBounds ? bounds.center : exitTarget.transform.position;
+        float markerY = hasBounds ? bounds.min.y + 0.06f : center.y + 0.06f;
+
+        tutorialExitHighlightMarker = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        tutorialExitHighlightMarker.name = "VRME_TutorialExitHighlight";
+        tutorialExitHighlightMarker.transform.position = new Vector3(center.x, markerY, center.z);
+        tutorialExitHighlightMarker.transform.localScale = new Vector3(0.65f, 0.035f, 0.65f);
+
+        Collider markerCollider = tutorialExitHighlightMarker.GetComponent<Collider>();
+        if (markerCollider != null)
+        {
+            Destroy(markerCollider);
+        }
+
+        Renderer markerRenderer = tutorialExitHighlightMarker.GetComponent<Renderer>();
+        if (markerRenderer != null)
+        {
+            markerRenderer.material = CreateTaskHighlightMaterial(taskTargetHighlightColor);
+        }
+
+        GameObject markerLight = new GameObject("VRME_TutorialExitHighlight_Light");
+        markerLight.transform.SetParent(tutorialExitHighlightMarker.transform, false);
+        markerLight.transform.localPosition = Vector3.up * 0.5f;
+        Light light = markerLight.AddComponent<Light>();
+        light.type = LightType.Point;
+        light.color = taskTargetHighlightColor;
+        light.intensity = 2.2f;
+        light.range = 2.2f;
+        light.shadows = LightShadows.None;
+
+        Debug.Log("[VRME] Tutorial Exit teleport anchor enabled with highlight; legacy arrow and text remain hidden.");
+    }
+
     private void AddTargetMarker(
         GameObject target,
         SceneTaskHighlightSpec spec,
@@ -1772,6 +2259,10 @@ public class VrmeAtticClient : MonoBehaviour
                     CompleteGuidedTask("elephant_received_banana");
                 }
                 break;
+            case GuidedTaskCompletionMode.TutorialControlledDialogue:
+                // Tutorial completion is driven by the explicit dialogue state
+                // machine and two distinct held-object voice checkpoints.
+                break;
         }
     }
 
@@ -1788,6 +2279,21 @@ public class VrmeAtticClient : MonoBehaviour
         }
 
         return false;
+    }
+
+    private async Task WaitForCurrentReplyBeforeTutorialIntroAsync()
+    {
+        // Let queued main-thread audio-start actions run before checking the
+        // player, then avoid cutting off a movement hint or help response.
+        await Task.Delay(TimeSpan.FromSeconds(0.1));
+        int attempts = 0;
+        while (isActiveAndEnabled && attempts < 400 &&
+               (isRecording || isSending || IsReplyPlaybackActive()))
+        {
+            attempts++;
+            await Task.Delay(TimeSpan.FromSeconds(0.05));
+        }
+        await Task.Delay(TimeSpan.FromSeconds(0.15));
     }
 
     private bool HasHighlightedElephantBeenFed()
@@ -2199,7 +2705,20 @@ public class VrmeAtticClient : MonoBehaviour
         ObjectNearTarget,
         PlayerAndObjectNearTarget,
         DogFetchReturned,
-        ElephantFed
+        ElephantFed,
+        TutorialControlledDialogue
+    }
+
+    private enum TutorialControlStage
+    {
+        Inactive,
+        AwaitingInitialDescription,
+        AwaitingFirstHeldDescription,
+        AwaitingFirstShapeDescription,
+        AwaitingFirstActionChoice,
+        AwaitingFirstInteraction,
+        AwaitingSecondHeldDescription,
+        Complete
     }
 
     private enum TaskMarkerPlacement
@@ -2339,6 +2858,45 @@ public class VrmeAtticClient : MonoBehaviour
         }
 
         Debug.LogWarning("[VRME] Stage-complete trigger gave up after retries. scene=" + sceneName);
+    }
+
+    private async Task SendTutorialStagePromptAsync(string stageName)
+    {
+        string prompt =
+            "[SYSTEM_TUTORIAL_STAGE]\n" +
+            "Stage: " + stageName + "\n" +
+            "Say only the fixed warm tutorial instruction for this stage.\n" +
+            "[/SYSTEM_TUTORIAL_STAGE]";
+
+        // audio_stream_end means the backend has finished sending PCM, not that
+        // Unity has finished playing the buffered samples. Wait for both so this
+        // automatic Tutorial transition cannot cut off the preceding reply.
+        for (int attempt = 0; attempt < 40; attempt++)
+        {
+            if (!isSending && !IsReplyPlaybackActive())
+            {
+                await Task.Delay(TimeSpan.FromSeconds(0.45));
+                if (!isSending && !IsReplyPlaybackActive())
+                {
+                    bool sent = await SendTextPromptAsync(prompt, "tutorial_stage");
+                    if (sent)
+                    {
+                        Debug.Log("[VRME] Tutorial stage prompt sent after prior playback finished. stage=" + stageName);
+                        return;
+                    }
+                }
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(0.25));
+        }
+
+        Debug.LogWarning("[VRME] Tutorial stage prompt gave up after retries. stage=" + stageName);
+    }
+
+    private bool IsReplyPlaybackActive()
+    {
+        return (streamingPlayer != null && streamingPlayer.IsActive) ||
+            (audioSource != null && audioSource.isPlaying);
     }
 
     private async Task SendAudioAsync(
@@ -3865,6 +4423,25 @@ public class VrmeAtticClient : MonoBehaviour
                     continue;
                 }
 
+                if (string.Equals(
+                    ExtractJsonString(text, "type", ""),
+                    "tutorial_control",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    string actionName = ExtractJsonString(text, "action", "");
+                    string objectKey = ExtractJsonString(text, "objectKey", "");
+                    mainThreadActions.Enqueue(() => ApplyTutorialControlEvent(actionName, objectKey));
+                    Debug.Log("[VRME] Tutorial control event received. action=" + actionName + ", object=" + objectKey);
+                    continue;
+                }
+
+                if (text.Contains("\"tutorial_exit_highlight\""))
+                {
+                    mainThreadActions.Enqueue(ShowTutorialExitHighlight);
+                    Debug.Log("[VRME] Tutorial Exit highlight requested by the backend.");
+                    continue;
+                }
+
                 if (text.Contains("\"avatar_reply_start\""))
                 {
                     string source = ExtractJsonString(text, "source", "");
@@ -3984,7 +4561,9 @@ public class VrmeAtticClient : MonoBehaviour
     // legacy "point at the task object" reveal is disabled for every scene.
     private static bool IsTaskHighlightRevealAllowedForCurrentScene()
     {
-        return false;
+        // Formal scenes preserve free discovery. The tutorial deliberately
+        // reveals its practice objects after the avatar introduces the task.
+        return IsTutorialScene();
     }
 
     private void ActivateSceneTaskHighlightsFromAudioStart(string source)
@@ -4101,6 +4680,8 @@ public class VrmeAtticClient : MonoBehaviour
         private float gain = 1f;
         private float startBufferSeconds = 0.18f;
         private int sampleRate = 24000;
+
+        public bool IsActive => active;
 
         public void Begin(AudioSource audioSource, int hz, int channelCount, float outputGain, int maxSeconds, float bufferSeconds)
         {

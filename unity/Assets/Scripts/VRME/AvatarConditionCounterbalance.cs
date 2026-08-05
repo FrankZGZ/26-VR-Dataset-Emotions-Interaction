@@ -8,7 +8,7 @@ using UnityEngine.SceneManagement;
 /// Assigns warm/cold deterministically for the six experimental scenes.
 /// Adjacent participant numbers receive complementary assignments, so every
 /// participant experiences three warm and three cold scenes and every scene is
-/// balanced across each participant pair. Tutorial and transition scenes are excluded.
+/// balanced across each participant pair. Tutorial is fixed to warm; transition scenes are excluded.
 /// </summary>
 public static class AvatarConditionCounterbalance
 {
@@ -39,6 +39,15 @@ public static class AvatarConditionCounterbalance
     public static bool ApplyForActiveScene()
     {
         string sceneName = SceneManager.GetActiveScene().name;
+        if (string.Equals(sceneName, "Tutorial_Interaction", StringComparison.OrdinalIgnoreCase))
+        {
+            // Every participant receives the same concise, supportive tutorial.
+            // The six formal scenes still receive their counterbalanced condition below.
+            PlayerData.avatarCondition = "warm";
+            Debug.Log("[Counterbalance] Tutorial condition fixed to warm.");
+            return true;
+        }
+
         int sceneIndex = Array.FindIndex(ExperimentalScenes,
             scene => string.Equals(scene, sceneName, StringComparison.OrdinalIgnoreCase));
         if (sceneIndex < 0)

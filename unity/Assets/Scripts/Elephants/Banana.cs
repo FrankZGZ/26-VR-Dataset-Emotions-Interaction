@@ -11,6 +11,8 @@ public class Banana : MonoBehaviour
     
     void Start()
     {
+        HideGuidanceArrows();
+
         grabInteractable = GetComponent<GrabInteractable>();
         rb = GetComponent<Rigidbody>();
         if (rb != null)
@@ -35,14 +37,19 @@ public class Banana : MonoBehaviour
         if (evt.Type == PointerEventType.Select)
         {
             rb.useGravity = true;
-            if (Arrow != null)
-            {
-                Arrow.SetActive(false);
-            }
-            if (ArrowPoint != null)
-            {
-                ArrowPoint.SetActive(false);
-            }
+            HideGuidanceArrows();
+        }
+    }
+
+    private void HideGuidanceArrows()
+    {
+        if (Arrow != null)
+        {
+            Arrow.SetActive(false);
+        }
+        if (ArrowPoint != null)
+        {
+            ArrowPoint.SetActive(false);
         }
     }
 

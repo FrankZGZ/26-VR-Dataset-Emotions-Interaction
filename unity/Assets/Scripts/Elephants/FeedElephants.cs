@@ -24,6 +24,11 @@ public class FeedElephants : MonoBehaviour
 
     private void Start()
     {
+        if (ArrowPoint != null)
+        {
+            ArrowPoint.SetActive(false);
+        }
+
         if (fruit != null)
         {
             fruitInitialPosition = fruit.transform.position;
@@ -119,8 +124,12 @@ public class FeedElephants : MonoBehaviour
                 fruitRb.linearVelocity = Vector3.zero;
                 fruitRb.angularVelocity = Vector3.zero;
             }
-            // show arrow point
-            ArrowPoint.SetActive(true);
+            // Guidance is delivered through highlighting and voice, so keep
+            // the legacy arrow hidden when the fruit is reset.
+            if (ArrowPoint != null)
+            {
+                ArrowPoint.SetActive(false);
+            }
         }
 
         // Allow this elephant to eat again
