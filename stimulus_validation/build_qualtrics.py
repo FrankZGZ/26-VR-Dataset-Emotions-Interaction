@@ -37,7 +37,7 @@ SURVEY_NAME = "Avatar Voice Tone Validation v2 (revised warm/cold, counterbalanc
 # ---------------------------------------------------------------- config
 
 SCALE_MAX = 9          # RoSAS as published is 9-point. Set to 7 to match a 7-point Unity slider.
-AUDIO = "https://github.com/FrankZGZ/26-VR-Dataset-Emotions-Interaction/raw/refs/heads/qualtrics-stimuli/stimulus_validation/audio"
+AUDIO = "https://raw.githubusercontent.com/FrankZGZ/26-VR-Dataset-Emotions-Interaction/qualtrics-stimuli/stimulus_validation/audio"
 AUDIO_VERSION = "warmth-pairing-2026-08-09-v1"
 TONE_CHECK = "https://avatar1234.netlify.app/test_tones.wav"  # July pretest asset
 SHOW_TRANSCRIPT = False                     # True also prints the words under the player
