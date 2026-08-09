@@ -42,7 +42,7 @@ public static class ConfigureAllEmotionSceneAvatars
             Path = "Assets/Scenes/Lake.unity",
             Position = new Vector3(-1.3f, 0f, 4.5f),
             Rotation = new Quaternion(0f, 0.5847103f, 0f, 0.81124216f),
-            Prompt = "You are on a peaceful jetty beside a lake, surrounded by calm water and nature. The participant can relax, throw stones, and launch paper planes."
+            Prompt = ""
         },
         new SceneAvatarSpec
         {

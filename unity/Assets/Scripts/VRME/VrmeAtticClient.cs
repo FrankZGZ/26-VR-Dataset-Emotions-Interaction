@@ -811,8 +811,36 @@ public class VrmeAtticClient : MonoBehaviour
 
         float[] samples = new float[samplePosition * recordingClip.channels];
         recordingClip.GetData(samples, 0);
+        if (!HasNonSilentSamples(samples))
+        {
+            Debug.LogWarning("[VRME] Silent recording discarded before sending.");
+            return;
+        }
+
         byte[] wavBytes = EncodeWav(samples, recordingClip.channels, sampleRate);
         await SendAudioAsync(wavBytes, capturedTurnContext);
+    }
+
+    private static bool HasNonSilentSamples(float[] samples)
+    {
+        if (samples == null)
+        {
+            return false;
+        }
+
+        // Unity returned an all-zero clip in the observed failure. Keep this
+        // threshold deliberately tiny so quiet real speech is still sent; an
+        // empty STT result is handled independently by the backend protocol.
+        const float sampleEpsilon = 0.000001f;
+        for (int i = 0; i < samples.Length; i++)
+        {
+            if (Mathf.Abs(samples[i]) > sampleEpsilon)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task RunAutoIntroAsync(float fallbackGraceSeconds = 0f)
@@ -4471,6 +4499,16 @@ public class VrmeAtticClient : MonoBehaviour
                 {
                     EnqueueOrHoldPlaybackAction(EndPcmStream, holdingCurrentStream);
                     Debug.Log("[VRME] Audio stream ended. WebSocket remains available for the next voice turn if the server keeps it open.");
+                    return true;
+                }
+
+                if (string.Equals(
+                    ExtractJsonString(text, "type", ""),
+                    "voice_turn_end",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    string reason = ExtractJsonString(text, "reason", "unspecified");
+                    Debug.LogWarning("[VRME] Voice turn completed without a spoken reply. reason=" + reason);
                     return true;
                 }
 

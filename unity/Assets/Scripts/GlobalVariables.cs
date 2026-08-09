@@ -27,15 +27,15 @@ public static class PlayerData
     static PlayerData()
     {
         participantId = "0";
-        // Only affects AvatarConditionCounterbalance's default parity when a scene is
-        // entered directly without going through Login (real participants get a real
-        // loginId/participantId from Login, which overrides this). Was "-1" (odd parity,
-        // e.g. SolitaryConfinement -> cold); "0" (even parity) flips every scene's
-        // no-login default to the opposite condition, e.g. SolitaryConfinement -> warm.
+        // Only affects AvatarConditionCounterbalance's default pattern index when a
+        // scene is entered directly without going through Login (real participants
+        // get a real loginId/participantId from Login, which overrides this). "0"
+        // resolves to WarmSceneIndexPatterns[0] (Attic/Elephant/Puppies warm,
+        // Lake/SolitaryConfinement/Tunnel cold) for the no-login default.
         loginId = "0";
         sessionId = System.Guid.NewGuid().ToString("N");
         avatarCondition = "unset";
-        counterbalanceScheme = "warm-cold-v1";
+        counterbalanceScheme = "warm-cold-18pattern-v1";
         sceneSequence = new string[1] { "Test" };
         currentSceneIndex = 0;
     }
@@ -92,15 +92,16 @@ public class EmotionSurveySingle
     public float guidanceClarityValue;
     public float attentionAccuracyValue;
     public float conversationNaturalnessValue;
-    public float avatarFriendlyValue;
-    public float avatarSincereValue;
-    public float avatarGoodNaturedValue;
-    public float avatarDominantValue;
-    public float avatarCapableValue;
-    public float asaqUserEmotionPresenceValue;
-    public float asaqAgentPersonalityPresenceValue;
-    public float asaqAgentIntentionalityValue;
-    public float asaqSocialPresenceValue;
+    // RoSAS-SF (Fraune et al., 2025, Int'l J of Social Robotics): validated
+    // 6-item short form of the Robotic Social Attributes Scale. Two items per
+    // subscale: warmth (compassionate, social), competence (competent,
+    // reliable), discomfort (scary, awkward).
+    public float rosasCompassionateValue;
+    public float rosasSocialValue;
+    public float rosasCompetentValue;
+    public float rosasReliableValue;
+    public float rosasScaryValue;
+    public float rosasAwkwardValue;
 }
 
 

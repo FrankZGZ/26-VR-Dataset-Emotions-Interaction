@@ -34001,8 +34001,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 1603518291700351669, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
       propertyPath: scenePrompt
-      value: You are on a peaceful jetty beside a lake, surrounded by calm water
-        and nature. The participant can relax, throw stones, and launch paper planes.
+      value:
       objectReference: {fileID: 0}
     - target: {fileID: 6750788707464913141, guid: 1d0a308d26b94cd4bb44f3ce1a2c0063, type: 3}
       propertyPath: m_LocalPosition.x

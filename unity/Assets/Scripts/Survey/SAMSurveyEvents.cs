@@ -45,27 +45,23 @@ public class SAMSurveyEvents : MonoBehaviour
     private Button samOverlaySubmitButton;
     private Button[] likertChoiceButtons;
     private Button likertSubmitButton;
-    private readonly float[] avatarPerceptionValues = new float[5];
-    private readonly string[] avatarPerceptionLabels = new string[]
+    // RoSAS-SF (Fraune et al., 2025, Int'l J of Social Robotics): validated
+    // 6-item short form of the Robotic Social Attributes Scale. Two items per
+    // subscale: warmth (compassionate, social), competence (competent,
+    // reliable), discomfort (scary, awkward).
+    private readonly float[] rosasValues = new float[6];
+    private readonly string[] rosasLabels = new string[]
     {
-        "The avatar was friendly.",
-        "The avatar was sincere.",
-        "The avatar was good-natured.",
-        "The avatar appeared dominant.",
-        "The avatar was capable."
-    };
-    private readonly float[] asaqQuestionValues = new float[4];
-    private readonly string[] asaqQuestionLabels = new string[]
-    {
-        "The emotions I felt during the interaction were caused by the agent.",
-        "The agent had a distinctive character.",
-        "The agent seemed to know what it was doing.",
-        "The agent felt like a social entity."
+        "The avatar seemed compassionate.",
+        "The avatar seemed social.",
+        "The avatar seemed competent.",
+        "The avatar seemed reliable.",
+        "The avatar seemed scary.",
+        "The avatar seemed awkward."
     };
     private readonly List<GameObject> samPageChildren = new List<GameObject>();
     private bool isSubmitting;
     private bool likertPageVisible;
-    private bool showingAvatarPerceptionPage = true;
     private bool hiddenOnSceneStart;
 
     private void Awake()
@@ -199,7 +195,7 @@ public class SAMSurveyEvents : MonoBehaviour
 
     private IEnumerator SubmitLikertPage()
     {
-        Debug.Log("[Survey] Likert submit requested.");
+        Debug.Log("[Survey] RoSAS-SF submit requested.");
         isSubmitting = true;
 
         foreach (float answer in CurrentLikertValues())
@@ -208,65 +204,35 @@ public class SAMSurveyEvents : MonoBehaviour
             {
                 isSubmitting = false;
                 if (debugInfo != null) debugInfo.text = "Please answer every question before continuing.";
-                Debug.LogWarning("[Survey] Likert submit blocked because at least one item is unanswered.");
+                Debug.LogWarning("[Survey] RoSAS-SF submit blocked because at least one item is unanswered.");
                 yield break;
             }
         }
 
-        if (showingAvatarPerceptionPage)
-        {
-            EmotionSurveySingle perceptionRecord = BuildBaseSurveyRecord("avatar_perception_v1");
-            perceptionRecord.valenceValue = -1f;
-            perceptionRecord.arousalValue = -1f;
-            perceptionRecord.dominanceValue = -1f;
-            SetLikertFields(perceptionRecord, -1f);
-            perceptionRecord.avatarFriendlyValue = avatarPerceptionValues[0];
-            perceptionRecord.avatarSincereValue = avatarPerceptionValues[1];
-            perceptionRecord.avatarGoodNaturedValue = avatarPerceptionValues[2];
-            perceptionRecord.avatarDominantValue = avatarPerceptionValues[3];
-            perceptionRecord.avatarCapableValue = avatarPerceptionValues[4];
-
-            string perceptionTime = System.DateTime.Now.ToString("dd-MMM_HH-mm-ss");
-            bool perceptionSaved = SaveSurveyDataToFile(
-                JsonUtility.ToJson(perceptionRecord), perceptionRecord.participantId,
-                perceptionRecord.sceneName, perceptionTime, "AvatarPerceptionSurvey");
-            yield return new WaitForSeconds(0.25f);
-            if (!perceptionSaved)
-            {
-                isSubmitting = false;
-                debugInfo.text = "[Error] Could not save avatar perception data.";
-                yield break;
-            }
-
-            Debug.Log("[Survey] Avatar perception saved. Moving to ASAQ page.");
-            ShowAsaqPage();
-            isSubmitting = false;
-            yield break;
-        }
-
-        EmotionSurveySingle surveySingle = BuildBaseSurveyRecord("avatar_asaq_short_v1");
+        EmotionSurveySingle surveySingle = BuildBaseSurveyRecord("rosas_sf_v1");
         surveySingle.valenceValue = -1f;
         surveySingle.arousalValue = -1f;
         surveySingle.dominanceValue = -1f;
         SetLikertFields(surveySingle, -1f);
-        surveySingle.asaqUserEmotionPresenceValue = asaqQuestionValues[0];
-        surveySingle.asaqAgentPersonalityPresenceValue = asaqQuestionValues[1];
-        surveySingle.asaqAgentIntentionalityValue = asaqQuestionValues[2];
-        surveySingle.asaqSocialPresenceValue = asaqQuestionValues[3];
-        surveySingle.socialPresenceValue = surveySingle.asaqSocialPresenceValue;
+        surveySingle.rosasCompassionateValue = rosasValues[0];
+        surveySingle.rosasSocialValue = rosasValues[1];
+        surveySingle.rosasCompetentValue = rosasValues[2];
+        surveySingle.rosasReliableValue = rosasValues[3];
+        surveySingle.rosasScaryValue = rosasValues[4];
+        surveySingle.rosasAwkwardValue = rosasValues[5];
 
         string timeStr = System.DateTime.Now.ToString("dd-MMM_HH-mm-ss");
-        bool saveSuccess = SaveSurveyDataToFile(JsonUtility.ToJson(surveySingle), surveySingle.participantId, surveySingle.sceneName, timeStr, "LikertSurvey");
+        bool saveSuccess = SaveSurveyDataToFile(JsonUtility.ToJson(surveySingle), surveySingle.participantId, surveySingle.sceneName, timeStr, "RosasSurvey");
         yield return new WaitForSeconds(0.25f);
 
         if (!saveSuccess)
         {
             isSubmitting = false;
-            debugInfo.text = "[Error] Could not save Likert data.";
+            debugInfo.text = "[Error] Could not save RoSAS-SF data.";
             yield break;
         }
 
-        Debug.Log("[Survey] Likert saved. Survey complete.");
+        Debug.Log("[Survey] RoSAS-SF saved. Survey complete.");
         FinishSurvey();
     }
 
@@ -300,15 +266,12 @@ public class SAMSurveyEvents : MonoBehaviour
         surveySingle.guidanceClarityValue = value;
         surveySingle.attentionAccuracyValue = value;
         surveySingle.conversationNaturalnessValue = value;
-        surveySingle.avatarFriendlyValue = value;
-        surveySingle.avatarSincereValue = value;
-        surveySingle.avatarGoodNaturedValue = value;
-        surveySingle.avatarDominantValue = value;
-        surveySingle.avatarCapableValue = value;
-        surveySingle.asaqUserEmotionPresenceValue = value;
-        surveySingle.asaqAgentPersonalityPresenceValue = value;
-        surveySingle.asaqAgentIntentionalityValue = value;
-        surveySingle.asaqSocialPresenceValue = value;
+        surveySingle.rosasCompassionateValue = value;
+        surveySingle.rosasSocialValue = value;
+        surveySingle.rosasCompetentValue = value;
+        surveySingle.rosasReliableValue = value;
+        surveySingle.rosasScaryValue = value;
+        surveySingle.rosasAwkwardValue = value;
     }
 
     private bool SaveSurveyDataToFile(string jsonData, string participantId, string sceneName, string timeStr, string prefix)
@@ -361,7 +324,6 @@ public class SAMSurveyEvents : MonoBehaviour
 
     private void ShowLikertPage()
     {
-        showingAvatarPerceptionPage = true;
         likertPageVisible = true;
         MoveSurveyInFrontOfCamera();
         if (positionQuestionnaireInFrontOfCamera)
@@ -391,24 +353,6 @@ public class SAMSurveyEvents : MonoBehaviour
         {
             debugInfo.text = "";
         }
-    }
-
-    private void ShowAsaqPage()
-    {
-        showingAvatarPerceptionPage = false;
-        if (likertPanel != null)
-        {
-            likertPanel.SetActive(false);
-            Destroy(likertPanel);
-            likertPanel = null;
-        }
-        CreateLikertPageIfNeeded();
-        if (likertPanel != null)
-        {
-            likertPanel.SetActive(true);
-            likertPanel.transform.SetAsLastSibling();
-        }
-        if (debugInfo != null) debugInfo.text = "";
     }
 
     private void CacheSamPageChildren()
@@ -695,8 +639,7 @@ public class SAMSurveyEvents : MonoBehaviour
         float contentYOffset = 24f;
 
         string[] currentLabels = CurrentLikertLabels();
-        string pageTitle = showingAvatarPerceptionPage ? "Avatar perception" : "Agent Social Attribution Questionnaire (ASAQ)";
-        Text title = CreateText(likertPanel.transform, font, pageTitle, new Vector2(38f, -22f + contentYOffset), new Vector2(760f, 38f), TextAnchor.MiddleLeft, 27);
+        Text title = CreateText(likertPanel.transform, font, "Avatar impression (RoSAS-SF)", new Vector2(38f, -22f + contentYOffset), new Vector2(760f, 38f), TextAnchor.MiddleLeft, 27);
         title.color = Color.black;
         Text instruction = CreateText(likertPanel.transform, font, "Select one score for each item. 1 = strongly disagree, 7 = strongly agree.", new Vector2(38f, -58f + contentYOffset), new Vector2(860f, 28f), TextAnchor.MiddleLeft, 16);
         instruction.color = Color.black;
@@ -705,9 +648,17 @@ public class SAMSurveyEvents : MonoBehaviour
         float firstChoiceX = 506f;
         float headerY = -96f;
         float rowStartY = -146f;
-        float rowSpacing = 86f;
+        // rowSpacing was a flat 86px tuned for the old 5-item avatar-perception
+        // page; RoSAS-SF's 6th row (awkward) plus the submit button then ran
+        // past the whiteboard's actual bottom edge. Shrink spacing to fit
+        // whatever height the panel actually has (panelRect.sizeDelta.y, which
+        // may come from the scene's real whiteboard RectTransform, not just
+        // likertPanelSize) instead of assuming 5 rows always fit.
+        float bottomReserve = 40f + 58f + 30f; // gap above submit + submit height + bottom margin
+        float availableRowsHeight = panelRect.sizeDelta.y + rowStartY - bottomReserve;
+        float rowSpacing = Mathf.Min(86f, availableRowsHeight / currentLabels.Length);
         float choiceSpacing = 58f;
-        Vector2 choiceSize = new Vector2(52f, 44f);
+        Vector2 choiceSize = new Vector2(52f, Mathf.Min(44f, rowSpacing - 20f));
 
         Text lowText = CreateText(likertPanel.transform, font, "Disagree", new Vector2(firstChoiceX - 98f, headerY + contentYOffset), new Vector2(88f, 24f), TextAnchor.MiddleCenter, 13);
         lowText.color = Color.black;
@@ -735,7 +686,9 @@ public class SAMSurveyEvents : MonoBehaviour
             }
         }
 
-        likertSubmitButton = CreateButton(likertPanel.transform, font, showingAvatarPerceptionPage ? "NEXT TO ASAQ" : "SUBMIT", new Vector2(360f, -590f + contentYOffset), new Vector2(280f, 58f));
+        float lastRowY = rowStartY - rowSpacing * (currentLabels.Length - 1) + contentYOffset;
+        float submitY = lastRowY - 62f - 40f;
+        likertSubmitButton = CreateButton(likertPanel.transform, font, "SUBMIT", new Vector2(360f, submitY), new Vector2(280f, 58f));
         AddLikertHitArea(likertSubmitButton.gameObject, -1, -1, true);
         likertSubmitButton.onClick.AddListener(delegate { StartCoroutine(SubmitLikertPage()); });
 
@@ -825,12 +778,12 @@ public class SAMSurveyEvents : MonoBehaviour
 
     private string[] CurrentLikertLabels()
     {
-        return showingAvatarPerceptionPage ? avatarPerceptionLabels : asaqQuestionLabels;
+        return rosasLabels;
     }
 
     private float[] CurrentLikertValues()
     {
-        return showingAvatarPerceptionPage ? avatarPerceptionValues : asaqQuestionValues;
+        return rosasValues;
     }
 
     private void CreateSamOverlaySubmitIfNeeded()
