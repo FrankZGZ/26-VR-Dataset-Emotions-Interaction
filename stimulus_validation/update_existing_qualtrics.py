@@ -18,7 +18,10 @@ AUDIO_BASE = os.environ.get(
     "QUALTRICS_AUDIO_BASE",
     "https://github.com/FrankZGZ/26-VR-Dataset-Emotions-Interaction/raw/refs/heads/qualtrics-stimuli/stimulus_validation/audio",
 ).rstrip("/")
-SURVEY_NAME = "Avatar Voice Tone Validation (current matched warm/cold module)"
+SURVEY_NAME = os.environ.get(
+    "QUALTRICS_SURVEY_NAME",
+    "Avatar Voice Tone Validation v2 (revised warm/cold module)",
+).strip()
 
 if not TOKEN:
     sys.exit("Set QUALTRICS_TOKEN first.")
@@ -124,6 +127,20 @@ def main():
         )
         call("PUT", f"/survey-definitions/{SURVEY_ID}/questions/{qid}", updated)
         print("updated instructions")
+
+    headphones = next(
+        (value for value in by_tag.values() if value[1].get("DataExportTag") == "Headphones"),
+        None,
+    )
+    if headphones:
+        qid, original = headphones
+        updated = clean_question(original)
+        updated["QuestionText"] = (
+            "Please put on headphones or earphones before continuing. Are you using them now?"
+        )
+        updated["QuestionDescription"] = "Headphones"
+        call("PUT", f"/survey-definitions/{SURVEY_ID}/questions/{qid}", updated)
+        print("updated headphone requirement")
 
     options = call("GET", f"/survey-definitions/{SURVEY_ID}/options")["result"]
     options["SurveyTitle"] = SURVEY_NAME

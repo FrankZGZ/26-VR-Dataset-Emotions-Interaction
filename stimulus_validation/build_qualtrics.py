@@ -23,6 +23,7 @@ What it guarantees, and what the July pretest did not have:
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -38,7 +39,6 @@ SURVEY_NAME = "Avatar Voice Tone Validation v2 (revised warm/cold, counterbalanc
 
 SCALE_MAX = 9          # RoSAS as published is 9-point. Set to 7 to match a 7-point Unity slider.
 AUDIO = "https://raw.githubusercontent.com/FrankZGZ/26-VR-Dataset-Emotions-Interaction/qualtrics-stimuli/stimulus_validation/audio"
-AUDIO_VERSION = "warmth-pairing-2026-08-09-v1"
 TONE_CHECK = "https://avatar1234.netlify.app/test_tones.wav"  # July pretest asset
 SHOW_TRANSCRIPT = False                     # True also prints the words under the player
 
@@ -77,14 +77,21 @@ SEQ = {int(k): v for k, v in SPEC["counterbalance"]["sequences"].items()}
 def call(method, path, payload=None):
     url = BASE + path
     data = json.dumps(payload).encode() if payload is not None else None
-    req = urllib.request.Request(url, data=data, method=method, headers={
-        "X-API-TOKEN": TOKEN, "Content-Type": "application/json",
-        "Accept": "application/json", "User-Agent": "Mozilla/5.0 VRME-Qualtrics-Builder/2.0"})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            return json.loads(r.read().decode())
-    except urllib.error.HTTPError as e:
-        sys.exit(f"{method} {path} -> {e.code}\n{e.read().decode()[:900]}")
+    for attempt in range(1, 6):
+        req = urllib.request.Request(url, data=data, method=method, headers={
+            "X-API-TOKEN": TOKEN, "Content-Type": "application/json",
+            "Accept": "application/json", "User-Agent": "Mozilla/5.0 VRME-Qualtrics-Builder/2.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                result = json.loads(r.read().decode())
+            time.sleep(0.4)
+            return result
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode(errors="replace")[:900]
+            if e.code in {403, 429, 500, 502, 503, 504} and attempt < 5:
+                time.sleep(min(2 ** attempt, 12))
+                continue
+            sys.exit(f"{method} {path} -> {e.code}\n{detail}")
 
 
 # ---------------------------------------------------------------- helpers
@@ -250,7 +257,7 @@ def main():
         stim_block[sid_num] = b
         said = None if s["userTurn"].startswith("[") else s["userTurn"]
         q(b, audio_q(f"{tag}_audio", f"aud_s{sid_num}", s["framing"],
-                     f"{AUDIO}/{s['audioFile']}?v={AUDIO_VERSION}", said=said,
+                     f"{AUDIO}/{s['audioFile']}", said=said,
                      transcript=s["replyText"] if SHOW_TRANSCRIPT else None))
         q(b, matrix(f"{tag}_rosas",
                     "How closely do you associate each word with this assistant?",
