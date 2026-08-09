@@ -89,6 +89,7 @@ public class VrmeAtticClient : MonoBehaviour
     private AudioSource audioSource;
     private StreamingPcmPlayer streamingPlayer;
     private AudioClip recordingClip;
+    private string activeMicrophoneDevice = "";
     private bool isRecording;
     private DateTime voiceTurnStartedAtUtc = DateTime.MinValue;
     private bool isSending;
@@ -120,11 +121,13 @@ public class VrmeAtticClient : MonoBehaviour
     private string tutorialVoiceHeldAtStartKey = "";
     private DateTime tutorialFirstInteractionArmedAtUtc = DateTime.MinValue;
     private Vector3 tutorialFirstInteractionStartPosition;
+    private static int persistentSocketSceneHandle = int.MinValue;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetPersistentConnectionForPlaySession()
     {
         PersistentWebSocket.Close();
+        persistentSocketSceneHandle = int.MinValue;
     }
 
 #if UNITY_EDITOR
@@ -155,6 +158,9 @@ public class VrmeAtticClient : MonoBehaviour
     {
         sceneStartedAtRealtime = Time.realtimeSinceStartup;
         lifetimeCancellation = new CancellationTokenSource();
+        ResetPersistentConnectionForScene();
+        activeMicrophoneDevice = ResolvePreferredMicrophoneDevice();
+        ResetMicrophoneCapture("scene start");
         AvatarConditionCounterbalance.ApplyForActiveScene();
         BackendHeartRateClient.EnsureRunning(serverUrl);
         if (requireAvatarAttentionBeforeAutoIntro && useBackendProactiveIntro)
@@ -180,6 +186,7 @@ public class VrmeAtticClient : MonoBehaviour
             ", controllerRecordButton=" + (enableControllerRecordButton ? recordController + "/" + recordControllerButton : "disabled") +
             ", microphones=" + Microphone.devices.Length +
             ", micDeviceNames=[" + string.Join(", ", Microphone.devices) + "]" +
+            ", selectedMicrophone=" + (string.IsNullOrWhiteSpace(activeMicrophoneDevice) ? "none" : activeMicrophoneDevice) +
             ", sessionId=" + PlayerData.sessionId +
             ", avatarCondition=" + PlayerData.avatarCondition);
 
@@ -753,18 +760,45 @@ public class VrmeAtticClient : MonoBehaviour
             return;
         }
 
+        string preferredDevice = ResolvePreferredMicrophoneDevice();
+        if (string.IsNullOrWhiteSpace(activeMicrophoneDevice) ||
+            !string.Equals(activeMicrophoneDevice, preferredDevice, StringComparison.Ordinal))
+        {
+            activeMicrophoneDevice = preferredDevice;
+            ResetMicrophoneCapture("device list changed");
+        }
+
         streamingPlayer?.Reset();
         if (audioSource != null && audioSource.isPlaying)
         {
             audioSource.Stop();
         }
 
-        recordingClip = Microphone.Start(null, false, maxRecordSeconds, sampleRate);
+        if (recordingClip != null)
+        {
+            Destroy(recordingClip);
+            recordingClip = null;
+        }
+
+        // Pin the Oculus input by name. Passing null asks Windows for its
+        // current default device, which can become stale during a scene/audio
+        // device transition while its recording cursor still advances.
+        if (Microphone.IsRecording(activeMicrophoneDevice))
+        {
+            Microphone.End(activeMicrophoneDevice);
+        }
+        recordingClip = Microphone.Start(activeMicrophoneDevice, false, maxRecordSeconds, sampleRate);
+        if (recordingClip == null)
+        {
+            Debug.LogWarning("[VRME] Microphone.Start failed for device=" + activeMicrophoneDevice + ".");
+            return;
+        }
+
         isRecording = true;
         voiceTurnStartedAtUtc = DateTime.UtcNow;
         tutorialVoiceHeldAtStartKey = IsTutorialScene() ? GetSingleHeldTutorialObjectKey() : "";
         CameraPoseSender.BeginVoiceSampling();
-        Debug.Log("[VRME] Recording started. Release " + GetRecordInputLabel() + " to send." + (isSending ? " Current reply is still finishing; this turn will queue." : ""));
+        Debug.Log("[VRME] Recording started on " + activeMicrophoneDevice + ". Release " + GetRecordInputLabel() + " to send." + (isSending ? " Current reply is still finishing; this turn will queue." : ""));
     }
 
     private string GetRecordInputLabel()
@@ -784,8 +818,8 @@ public class VrmeAtticClient : MonoBehaviour
             return;
         }
 
-        int samplePosition = Microphone.GetPosition(null);
-        Microphone.End(null);
+        int samplePosition = Microphone.GetPosition(activeMicrophoneDevice);
+        Microphone.End(activeMicrophoneDevice);
         isRecording = false;
         CameraPoseSender.EndVoiceSampling();
 
@@ -805,42 +839,113 @@ public class VrmeAtticClient : MonoBehaviour
 
         if (recordingClip == null || samplePosition <= 0)
         {
-            Debug.LogWarning("[VRME] Empty recording.");
+            Debug.LogWarning("[VRME] Empty recording cursor/clip. Resetting microphone device=" +
+                activeMicrophoneDevice + ".");
+            ResetMicrophoneCapture("empty recording recovery");
+            if (recordingClip != null)
+            {
+                Destroy(recordingClip);
+                recordingClip = null;
+            }
             return;
         }
 
         float[] samples = new float[samplePosition * recordingClip.channels];
         recordingClip.GetData(samples, 0);
-        if (!HasNonSilentSamples(samples))
+        if (!HasEncodablePcmSamples(samples))
         {
-            Debug.LogWarning("[VRME] Silent recording discarded before sending.");
+            Debug.LogWarning("[VRME] Silent/all-zero PCM recording discarded before sending. Resetting microphone device=" +
+                activeMicrophoneDevice + "; press A and speak again.");
+            ResetMicrophoneCapture("silent capture recovery");
+            Destroy(recordingClip);
+            recordingClip = null;
             return;
         }
 
         byte[] wavBytes = EncodeWav(samples, recordingClip.channels, sampleRate);
+        Destroy(recordingClip);
+        recordingClip = null;
         await SendAudioAsync(wavBytes, capturedTurnContext);
     }
 
-    private static bool HasNonSilentSamples(float[] samples)
+    private static bool HasEncodablePcmSamples(float[] samples)
     {
-        if (samples == null)
+        if (samples == null || samples.Length == 0)
         {
             return false;
         }
 
-        // Unity returned an all-zero clip in the observed failure. Keep this
-        // threshold deliberately tiny so quiet real speech is still sent; an
-        // empty STT result is handled independently by the backend protocol.
-        const float sampleEpsilon = 0.000001f;
+        // Match the 16-bit conversion performed by EncodeWav. The previous
+        // float epsilon admitted sub-PCM noise that became literal zero after
+        // encoding, producing a several-second WAV containing no audio.
+        const int requiredEncodableSamples = 8;
+        int encodableSamples = 0;
         for (int i = 0; i < samples.Length; i++)
         {
-            if (Mathf.Abs(samples[i]) > sampleEpsilon)
+            int pcmValue = Mathf.RoundToInt(Mathf.Clamp(samples[i], -1f, 1f) * short.MaxValue);
+            if (pcmValue != 0 && ++encodableSamples >= requiredEncodableSamples)
             {
                 return true;
             }
         }
 
         return false;
+    }
+
+    private static string ResolvePreferredMicrophoneDevice()
+    {
+        string[] devices = Microphone.devices;
+        if (devices == null || devices.Length == 0)
+        {
+            return "";
+        }
+
+        foreach (string device in devices)
+        {
+            if (!string.IsNullOrWhiteSpace(device) &&
+                (device.IndexOf("Oculus", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 device.IndexOf("Headset Microphone", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                return device;
+            }
+        }
+
+        return devices[0];
+    }
+
+    private void ResetMicrophoneCapture(string reason)
+    {
+        foreach (string device in Microphone.devices)
+        {
+            if (!string.IsNullOrWhiteSpace(device) && Microphone.IsRecording(device))
+            {
+                Microphone.End(device);
+            }
+        }
+
+        // Stop a capture opened through the legacy null/default-device path.
+        if (Microphone.IsRecording(null))
+        {
+            Microphone.End(null);
+        }
+
+        isRecording = false;
+        Debug.Log("[VRME] Microphone capture reset. reason=" + reason +
+            ", selectedDevice=" + (string.IsNullOrWhiteSpace(activeMicrophoneDevice) ? "none" : activeMicrophoneDevice));
+    }
+
+    private static void ResetPersistentConnectionForScene()
+    {
+        int sceneHandle = SceneManager.GetActiveScene().handle;
+        if (persistentSocketSceneHandle == sceneHandle)
+        {
+            return;
+        }
+
+        PersistentWebSocket.Close();
+        persistentSocketSceneHandle = sceneHandle;
+        Debug.Log("[VRME] Cleared the previous scene WebSocket before opening a fresh connection for " +
+            SceneManager.GetActiveScene().name + ".");
     }
 
     private async Task RunAutoIntroAsync(float fallbackGraceSeconds = 0f)
@@ -5102,6 +5207,19 @@ public class VrmeAtticClient : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (isRecording || (!string.IsNullOrWhiteSpace(activeMicrophoneDevice) &&
+            Microphone.IsRecording(activeMicrophoneDevice)))
+        {
+            ResetMicrophoneCapture("scene client destroyed");
+            CameraPoseSender.EndVoiceSampling();
+        }
+
+        if (recordingClip != null)
+        {
+            Destroy(recordingClip);
+            recordingClip = null;
+        }
+
         lifetimeCancellation?.Cancel();
         lifetimeCancellation?.Dispose();
         lifetimeCancellation = null;
