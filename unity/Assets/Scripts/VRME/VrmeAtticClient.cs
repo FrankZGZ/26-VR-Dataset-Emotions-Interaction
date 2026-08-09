@@ -847,6 +847,7 @@ public class VrmeAtticClient : MonoBehaviour
                 Destroy(recordingClip);
                 recordingClip = null;
             }
+            _ = SendMicrophoneRetryPromptAsync();
             return;
         }
 
@@ -859,6 +860,7 @@ public class VrmeAtticClient : MonoBehaviour
             ResetMicrophoneCapture("silent capture recovery");
             Destroy(recordingClip);
             recordingClip = null;
+            _ = SendMicrophoneRetryPromptAsync();
             return;
         }
 
@@ -946,6 +948,40 @@ public class VrmeAtticClient : MonoBehaviour
         persistentSocketSceneHandle = sceneHandle;
         Debug.Log("[VRME] Cleared the previous scene WebSocket before opening a fresh connection for " +
             SceneManager.GetActiveScene().name + ".");
+    }
+
+    private async Task SendMicrophoneRetryPromptAsync()
+    {
+        const string prompt =
+            "[SYSTEM_MICROPHONE_RETRY]\n" +
+            "Say exactly this one short sentence and nothing else: " +
+            "I didn't catch that. Please hold A and try again.\n" +
+            "[/SYSTEM_MICROPHONE_RETRY]";
+
+        // A participant can begin talking while the tail of the previous
+        // reply is still finishing. Wait briefly instead of dropping the
+        // recovery message because that send still owns the socket.
+        for (int attempt = 0; attempt < 8; attempt++)
+        {
+            if (lifetimeCancellation == null || lifetimeCancellation.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (!isSending)
+            {
+                bool sent = await SendTextPromptAsync(prompt, "microphone_retry");
+                if (sent)
+                {
+                    Debug.Log("[VRME] Spoken microphone retry guidance delivered.");
+                    return;
+                }
+            }
+
+            await Task.Delay(250);
+        }
+
+        Debug.LogWarning("[VRME] Could not deliver spoken microphone retry guidance.");
     }
 
     private async Task RunAutoIntroAsync(float fallbackGraceSeconds = 0f)
