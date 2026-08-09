@@ -1814,7 +1814,7 @@ def build_exact_tutorial_control_result(user_text: str, scene_name: str, scene_c
         if held_object.lower() == first_object.lower():
             return {"reply": "You've picked up the first object again. Please choose a different one and tell me what you notice.", "action": "", "objectKey": ""}
         return {
-            "reply": "Lovely—you've explored two different objects. When you're ready, teleport to the highlighted Exit position, or feel free to keep exploring and asking questions to me.",
+            "reply": "Lovely—you've explored two different objects. When you're ready, teleport to the highlighted Exit position and press B on the right controller to finish, or feel free to keep exploring and asking questions to me.",
             "action": "second_description_received", "objectKey": held_object,
         }
     return None
@@ -1823,7 +1823,7 @@ def build_exact_tutorial_control_result(user_text: str, scene_name: str, scene_c
 def build_exact_tutorial_exit_help_reply(user_text: str, scene_name: str, scene_context: str = "") -> str:
     if normalized_scene_name(scene_name) != "tutorialinteraction" or _tutorial_context_value(scene_context, "stage", "Inactive") != "Complete":
         return ""
-    return "Of course—when you're ready, use the thumbstick to teleport to the highlighted Exit position." if _tutorial_exit_requested(user_text) else ""
+    return "Of course—when you're ready, use the thumbstick to teleport to the highlighted Exit position, then press B on the right controller to finish." if _tutorial_exit_requested(user_text) else ""
 
 
 # Per-scene phrasing for what to do once the participant is holding the
@@ -1902,7 +1902,7 @@ def build_exact_stage_complete_reply(user_text: str, avatar_condition: str | Non
     if normalized_scene_name(scene_name) == "tutorialinteraction":
         return (
             "Nice exploring! You've discovered how these shapes respond when you pick them up and let them go. "
-            "You can keep trying any of them, or use the thumbstick to move to the Exit when you're ready."
+            "You can keep trying any of them, or use the thumbstick to move to the Exit and press B on the right controller when you're ready."
         )
 
     tone_name = backend_selected_tone(avatar_condition)["name"]
