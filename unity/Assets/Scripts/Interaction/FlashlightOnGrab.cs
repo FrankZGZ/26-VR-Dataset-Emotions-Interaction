@@ -11,9 +11,41 @@ public class FlashlightOnGrab : MonoBehaviour
     public GameObject flashlight;
     private GrabInteractable grabInteractable;
     private IPointableElement pointableElement;
+    private Rigidbody flashlightRigidbody;
+    private Collider flashlightCollider;
+    private float tunnelFloorY;
+    private bool hasTunnelFloor;
+    private bool isHeld;
+
+    private const float FloorRecoveryTolerance = 0.002f;
+    private const float FloorClearance = 0.002f;
 
     void Start()
-    {     
+    {
+        flashlightRigidbody = GetComponent<Rigidbody>();
+        flashlightCollider = GetComponent<Collider>();
+        if (flashlightRigidbody != null)
+        {
+            // The flashlight has a thin collider. Speculative continuous
+            // collision prevents it skipping through the tunnel floor between
+            // physics steps, including while transitioning out of a grab.
+            flashlightRigidbody.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+            flashlightRigidbody.interpolation = RigidbodyInterpolation.Interpolate;
+        }
+
+        GameObject tunnelGround = GameObject.Find("Ground");
+        Collider tunnelGroundCollider = tunnelGround != null ? tunnelGround.GetComponent<Collider>() : null;
+        if (tunnelGroundCollider != null)
+        {
+            tunnelFloorY = tunnelGroundCollider.bounds.max.y;
+            hasTunnelFloor = true;
+            KeepAboveTunnelFloor();
+        }
+        else
+        {
+            Debug.LogWarning("[FlashlightOnGrab] Tunnel Ground collider not found; floor recovery is unavailable.");
+        }
+
         // Get the interactable component
         grabInteractable = GetComponent<GrabInteractable>();
         
@@ -43,6 +75,8 @@ public class FlashlightOnGrab : MonoBehaviour
         // Check if this is a select event (grab)
         if (evt.Type == PointerEventType.Select)
         {
+            isHeld = true;
+            flashlightRigidbody?.WakeUp();
             Debug.Log($"[FlashlightOnGrab] Grab event detected from pointer: {evt.Identifier}");
             
             // Find the interactor by identifier
@@ -57,6 +91,7 @@ public class FlashlightOnGrab : MonoBehaviour
         // Check if this is an unselect event (release)
         else if (evt.Type == PointerEventType.Unselect || evt.Type == PointerEventType.Cancel)
         {
+            isHeld = false;
             Debug.Log($"[FlashlightOnGrab] Release event detected from pointer: {evt.Identifier}");
             
             // Find the interactor by identifier
@@ -68,6 +103,37 @@ public class FlashlightOnGrab : MonoBehaviour
                 OnReleased(isLeftHand);
             }
         }
+    }
+
+    private void FixedUpdate()
+    {
+        if (!isHeld)
+        {
+            KeepAboveTunnelFloor();
+        }
+    }
+
+    private void KeepAboveTunnelFloor()
+    {
+        if (!hasTunnelFloor || flashlightRigidbody == null || flashlightCollider == null)
+        {
+            return;
+        }
+
+        float colliderBottom = flashlightCollider.bounds.min.y;
+        if (colliderBottom >= tunnelFloorY - FloorRecoveryTolerance)
+        {
+            return;
+        }
+
+        float correction = tunnelFloorY - colliderBottom + FloorClearance;
+        flashlightRigidbody.position += Vector3.up * correction;
+
+        flashlightRigidbody.linearVelocity = Vector3.zero;
+        flashlightRigidbody.angularVelocity = Vector3.zero;
+        flashlightRigidbody.Sleep();
+
+        Debug.LogWarning("[FlashlightOnGrab] Prevented flashlight from falling below the Tunnel floor.");
     }
 
     private GrabInteractor FindInteractorById(int id)
