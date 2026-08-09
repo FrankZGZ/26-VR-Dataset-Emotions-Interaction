@@ -1,0 +1,199 @@
+{
+  "study": "Current VRME warm/cold matched voice validation",
+  "builtFrom": "Matched calls to the current server reply module using identical input and scene state",
+  "generation": {
+    "generatedAtUtc": "2026-08-09T03:25:51.715284+00:00",
+    "generator": "vrme_vibevoice_pack.server_unity_vibevoice.generate_reply",
+    "llmProvider": "openai",
+    "llmModel": "gpt-5.4-mini",
+    "serverBuildTag": "proactive-debug-2026-07-09-v2"
+  },
+  "notes": [
+    "Each pair uses identical user text, scene prompt, and current-turn Unity context for warm and cold.",
+    "The reply text is verbatim module output; it was not manually rewritten.",
+    "Audio uses the current server's condition-specific ElevenLabs settings with the same voice and model."
+  ],
+  "pairs": [
+    {
+      "pairId": "A",
+      "move": "opening greeting",
+      "warm": 1,
+      "cold": 4,
+      "matchQuality": "exact matched input and state"
+    },
+    {
+      "pairId": "B",
+      "move": "cannot verify and redirect",
+      "warm": 2,
+      "cold": 5,
+      "matchQuality": "exact matched input and state"
+    },
+    {
+      "pairId": "C",
+      "move": "actionable guidance",
+      "warm": 3,
+      "cold": 6,
+      "matchQuality": "exact matched input and state"
+    }
+  ],
+  "stimuli": [
+    {
+      "id": 1,
+      "pairId": "A",
+      "condition": "warm",
+      "move": "opening greeting",
+      "sceneName": "Tunnel",
+      "framing": "The session has just started. The assistant speaks first.",
+      "userTurn": "[The session has just started. The assistant speaks first.]",
+      "moduleInput": "Greet the participant briefly in one short sentence, in whatever style fits the selected avatar condition, then ask them to describe in their own words what they notice around them. Keep it to one short open question. Do not mention any task, objective, goal, or specific interactive object.",
+      "scenePrompt": "A long, dimly lit pedestrian tunnel. This is background knowledge only and must not be volunteered in the opening greeting.",
+      "sceneContext": "[UNITY_CONTEXT_SUMMARY]\ncurrentAttention=none, reason=no_current_user_trigger_context\ncurrentHeldObjects=none\nauthority=No User Trigger perception window belongs to this automatic text request.\n[/UNITY_CONTEXT_SUMMARY]\n[GUIDED_TASK_STATE]\nscene=Tunnel\nstatus=not_started\ninstruction_for_avatar=Background only; do not announce an object or task unprompted.\n[/GUIDED_TASK_STATE]",
+      "replyText": "Hi, it’s so nice to have you here! Take a look around — what do you notice?",
+      "audioFile": "s1_warm_a.mp3"
+    },
+    {
+      "id": 2,
+      "pairId": "B",
+      "condition": "warm",
+      "move": "cannot verify, redirect to what is present",
+      "sceneName": "SolitaryConfinement",
+      "framing": "A small prison cell. A cup and a book are nearby, and neither is currently held. The person asks about water.",
+      "userTurn": "Why is there no water here?",
+      "moduleInput": "Why is there no water here?",
+      "scenePrompt": "A small solitary-confinement cell containing a cup and a book. The scene does not state whether water is present or explain its absence.",
+      "sceneContext": "[UNITY_CONTEXT_SUMMARY]\ncurrentAttention=none, reason=no_tracked_gaze_hit_in_current_voice_window\ncurrentHeldObjects=none\nauthority=This context contains only observations sampled during the current voice turn.\n[/UNITY_CONTEXT_SUMMARY]\n[NEARBY_INTERACTABLE_OBJECTS]\n- cup | distance=1.6m | direction=right | currentHeld=False\n- book | distance=1.5m | direction=right | currentHeld=False\nauthority=fresh availability, not proof of use\n[/NEARBY_INTERACTABLE_OBJECTS]\n[CURRENT_HELD_OBJECTS]\nnone\n[/CURRENT_HELD_OBJECTS]\n[GUIDED_TASK_STATE]\nscene=SolitaryConfinement\nstatus=not_started\ninstruction_for_avatar=Background only; do not announce a task unless explicitly asked what to do.\n[/GUIDED_TASK_STATE]",
+      "replyText": "I don’t know why there isn’t water here — the scene only tells me there’s a cup and a book. If you want, you can keep looking around or try the cup or the book; what do you notice?",
+      "audioFile": "s2_warm_b.mp3"
+    },
+    {
+      "id": 3,
+      "pairId": "C",
+      "condition": "warm",
+      "move": "actionable guidance",
+      "sceneName": "Tunnel",
+      "framing": "A pedestrian tunnel. A flashlight is nearby on the floor and is not currently held. The person asks what they can do with it.",
+      "userTurn": "What can I do with the flashlight?",
+      "moduleInput": "What can I do with the flashlight?",
+      "scenePrompt": "A long, dimly lit tunnel. A flashlight can be picked up and carried toward the tunnel target. This interaction may be explained because the participant explicitly asked what they can do with the flashlight.",
+      "sceneContext": "[UNITY_CONTEXT_SUMMARY]\ncurrentAttention=Flashlight, source=eye_gaze, currentHeld=False\ncurrentHeldObjects=none\nauthority=This context contains only observations sampled during the current voice turn.\n[/UNITY_CONTEXT_SUMMARY]\n[NEARBY_INTERACTABLE_OBJECTS]\n- Flashlight | distance=1.6m | direction=front-right | currentHeld=False\nauthority=fresh availability, not proof of use\n[/NEARBY_INTERACTABLE_OBJECTS]\n[CURRENT_HELD_OBJECTS]\nnone\n[/CURRENT_HELD_OBJECTS]\n[GUIDED_TASK_STATE]\nscene=Tunnel\nstatus=not_started\nobjective=Carry the flashlight toward the tunnel target.\nplannedHighlightedObjectHints=Flashlight\nplannedHighlightedTargetHints=Tunnel target\ninstruction_for_avatar=Use plain object and target names; never say highlighted.\n[/GUIDED_TASK_STATE]",
+      "replyText": "Of course — you can pick up the flashlight and carry it toward the tunnel target. What would you like to try?",
+      "audioFile": "s3_warm_c.mp3"
+    },
+    {
+      "id": 4,
+      "pairId": "A",
+      "condition": "cold",
+      "move": "opening greeting",
+      "sceneName": "Tunnel",
+      "framing": "The session has just started. The assistant speaks first.",
+      "userTurn": "[The session has just started. The assistant speaks first.]",
+      "moduleInput": "Greet the participant briefly in one short sentence, in whatever style fits the selected avatar condition, then ask them to describe in their own words what they notice around them. Keep it to one short open question. Do not mention any task, objective, goal, or specific interactive object.",
+      "scenePrompt": "A long, dimly lit pedestrian tunnel. This is background knowledge only and must not be volunteered in the opening greeting.",
+      "sceneContext": "[UNITY_CONTEXT_SUMMARY]\ncurrentAttention=none, reason=no_current_user_trigger_context\ncurrentHeldObjects=none\nauthority=No User Trigger perception window belongs to this automatic text request.\n[/UNITY_CONTEXT_SUMMARY]\n[GUIDED_TASK_STATE]\nscene=Tunnel\nstatus=not_started\ninstruction_for_avatar=Background only; do not announce an object or task unprompted.\n[/GUIDED_TASK_STATE]",
+      "replyText": "You are here. What do you notice around you?",
+      "audioFile": "s4_cold_a.mp3"
+    },
+    {
+      "id": 5,
+      "pairId": "B",
+      "condition": "cold",
+      "move": "cannot verify, redirect to what is present",
+      "sceneName": "SolitaryConfinement",
+      "framing": "A small prison cell. A cup and a book are nearby, and neither is currently held. The person asks about water.",
+      "userTurn": "Why is there no water here?",
+      "moduleInput": "Why is there no water here?",
+      "scenePrompt": "A small solitary-confinement cell containing a cup and a book. The scene does not state whether water is present or explain its absence.",
+      "sceneContext": "[UNITY_CONTEXT_SUMMARY]\ncurrentAttention=none, reason=no_tracked_gaze_hit_in_current_voice_window\ncurrentHeldObjects=none\nauthority=This context contains only observations sampled during the current voice turn.\n[/UNITY_CONTEXT_SUMMARY]\n[NEARBY_INTERACTABLE_OBJECTS]\n- cup | distance=1.6m | direction=right | currentHeld=False\n- book | distance=1.5m | direction=right | currentHeld=False\nauthority=fresh availability, not proof of use\n[/NEARBY_INTERACTABLE_OBJECTS]\n[CURRENT_HELD_OBJECTS]\nnone\n[/CURRENT_HELD_OBJECTS]\n[GUIDED_TASK_STATE]\nscene=SolitaryConfinement\nstatus=not_started\ninstruction_for_avatar=Background only; do not announce a task unless explicitly asked what to do.\n[/GUIDED_TASK_STATE]",
+      "replyText": "I do not know. The scene only says there is a cup and a book in the cell. What do you want to look at next?",
+      "audioFile": "s5_cold_b.mp3"
+    },
+    {
+      "id": 6,
+      "pairId": "C",
+      "condition": "cold",
+      "move": "actionable guidance",
+      "sceneName": "Tunnel",
+      "framing": "A pedestrian tunnel. A flashlight is nearby on the floor and is not currently held. The person asks what they can do with it.",
+      "userTurn": "What can I do with the flashlight?",
+      "moduleInput": "What can I do with the flashlight?",
+      "scenePrompt": "A long, dimly lit tunnel. A flashlight can be picked up and carried toward the tunnel target. This interaction may be explained because the participant explicitly asked what they can do with the flashlight.",
+      "sceneContext": "[UNITY_CONTEXT_SUMMARY]\ncurrentAttention=Flashlight, source=eye_gaze, currentHeld=False\ncurrentHeldObjects=none\nauthority=This context contains only observations sampled during the current voice turn.\n[/UNITY_CONTEXT_SUMMARY]\n[NEARBY_INTERACTABLE_OBJECTS]\n- Flashlight | distance=1.6m | direction=front-right | currentHeld=False\nauthority=fresh availability, not proof of use\n[/NEARBY_INTERACTABLE_OBJECTS]\n[CURRENT_HELD_OBJECTS]\nnone\n[/CURRENT_HELD_OBJECTS]\n[GUIDED_TASK_STATE]\nscene=Tunnel\nstatus=not_started\nobjective=Carry the flashlight toward the tunnel target.\nplannedHighlightedObjectHints=Flashlight\nplannedHighlightedTargetHints=Tunnel target\ninstruction_for_avatar=Use plain object and target names; never say highlighted.\n[/GUIDED_TASK_STATE]",
+      "replyText": "You can pick up the flashlight and carry it toward the tunnel target. What would you like to try first?",
+      "audioFile": "s6_cold_c.mp3"
+    }
+  ],
+  "tts": {
+    "provider": "elevenlabs",
+    "voiceId": "pFZP5JQG7iQjIQuC4Bku",
+    "modelId": "eleven_flash_v2_5",
+    "presets": {
+      "warm": {
+        "stability": 0.66,
+        "similarity_boost": 0.8,
+        "style": 0.34,
+        "speed": 0.96,
+        "use_speaker_boost": true
+      },
+      "cold": {
+        "stability": 0.88,
+        "similarity_boost": 0.78,
+        "style": 0.02,
+        "speed": 1.0,
+        "use_speaker_boost": true
+      }
+    }
+  },
+  "counterbalance": {
+    "scheme": "6x6 reverse-balanced Latin square",
+    "sequences": {
+      "1": [
+        1,
+        2,
+        4,
+        3,
+        5,
+        6
+      ],
+      "2": [
+        2,
+        1,
+        6,
+        5,
+        3,
+        4
+      ],
+      "3": [
+        3,
+        4,
+        2,
+        1,
+        6,
+        5
+      ],
+      "4": [
+        4,
+        3,
+        5,
+        6,
+        1,
+        2
+      ],
+      "5": [
+        5,
+        6,
+        1,
+        2,
+        4,
+        3
+      ],
+      "6": [
+        6,
+        5,
+        3,
+        4,
+        2,
+        1
+      ]
+    }
+  }
+}
