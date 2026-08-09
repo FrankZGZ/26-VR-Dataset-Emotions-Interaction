@@ -2975,17 +2975,25 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             if not user_text:
-                # An empty STT result is still a completed voice turn.  Unity
-                # waits for an explicit terminal message before clearing its
-                # isSending flag; silently continuing here leaves the client
-                # waiting forever and causes later recordings to accumulate.
-                turn_end_payload = json.dumps(
-                    {"type": "voice_turn_end", "reason": "empty_transcript"},
-                    ensure_ascii=False,
-                )
-                if not await safe_send_text(websocket, turn_end_payload, "voice_turn_end"):
+                # Give the participant audible feedback even when an older
+                # Unity client sends an all-zero WAV or STT cannot recover any
+                # speech. The audio-stream end message also completes Unity's
+                # isSending state, so no separate silent terminal event is
+                # needed when TTS succeeds.
+                microphone_retry_reply = "I didn't catch that. Please hold A and try again."
+                request_start_at = request_start_at or time.time()
+                log("[AUDIO_TURN] Empty transcript; speaking microphone retry guidance.")
+                if not await send_avatar_reply(
+                    websocket,
+                    microphone_retry_reply,
+                    client_metadata,
+                    stream_reply_audio,
+                    request_start_at,
+                    "microphone_retry",
+                    stt_seconds=stt_seconds,
+                    llm_seconds=0.0,
+                ):
                     break
-                log("[AUDIO_TURN] Empty transcript; completed the turn without generating a reply.")
                 continue
             if request_start_at is None:
                 request_start_at = time.time()
