@@ -19,15 +19,22 @@ public class TeleportationEventListener : MonoBehaviour
     public GameObject[] destroyAfterTeleport;
     public GameObject[] refreshAfterTeleport;
     public bool hideQuestionnaireOnStart = true;
+    [Header("Exit confirmation")]
+    [Tooltip("The participant must be at the highlighted Exit and press the right-controller B button before SAM begins.")]
+    public OVRInput.Button exitConfirmButton = OVRInput.Button.Two;
+    public OVRInput.Controller exitConfirmController = OVRInput.Controller.RTouch;
+    [Range(0.5f, 3f)] public float exitConfirmationDistance = 1.25f;
     [Header("Keyboard testing")]
     public bool enableKeyboardExitTrigger = true;
-    public KeyCode keyboardExitTriggerKey = KeyCode.E;
+    public KeyCode keyboardExitConfirmationKey = KeyCode.B;
     [Tooltip("Move the XR rig to the scene's original questionnaire viewing point. Keep disabled during VR gameplay so the participant camera height/position is never changed by the survey trigger.")]
     public bool repositionRigForSurvey = false;
     [Tooltip("Legacy behavior that teleports the rig and resets scene objects. Keep disabled when showing the in-scene SAM/ASAQ UI.")]
     public bool applyLegacySceneResetAfterSurvey = false;
     private bool questionnaireTriggered;
     private float colliderTriggerArmedAt;
+    private readonly System.Collections.Generic.HashSet<int> playerCollidersInside =
+        new System.Collections.Generic.HashSet<int>();
 
     private void Awake()
     {
@@ -99,13 +106,38 @@ public class TeleportationEventListener : MonoBehaviour
 
     private void Update()
     {
-        if (enableKeyboardExitTrigger &&
-            Input.GetKeyDown(keyboardExitTriggerKey) &&
-            !questionnaireTriggered &&
-            (samTask == null || !samTask.activeInHierarchy))
+        if (questionnaireTriggered || IsBroadTunnelDoorTrigger() ||
+            (samTask != null && samTask.activeInHierarchy))
         {
-            TriggerQuestionnaire("keyboard " + keyboardExitTriggerKey);
+            return;
         }
+
+        bool controllerConfirmation = OVRInput.GetDown(exitConfirmButton, exitConfirmController);
+        bool keyboardConfirmation = enableKeyboardExitTrigger && Input.GetKeyDown(keyboardExitConfirmationKey);
+        if (!controllerConfirmation && !keyboardConfirmation)
+        {
+            return;
+        }
+
+        if (!IsExitAvailable())
+        {
+            Debug.Log("[Exit] B confirmation ignored because the Exit is not ready yet.");
+            return;
+        }
+
+        if (!IsParticipantAtExit())
+        {
+            Debug.Log("[Exit] B confirmation ignored because the participant is not at the highlighted Exit.");
+            return;
+        }
+
+        SceneController controller = GetSceneController();
+        if (controller != null && !controller.ConfirmExitAndOpenDoor())
+        {
+            return;
+        }
+
+        TriggerQuestionnaire(controllerConfirmation ? "right-controller B at Exit" : "keyboard B at Exit");
     }
 
     private void OnEndLocomotion(LocomotionSystem system)
@@ -123,13 +155,24 @@ public class TeleportationEventListener : MonoBehaviour
         if (Time.unscaledTime < colliderTriggerArmedAt ||
             questionnaireTriggered ||
             IsBroadTunnelDoorTrigger() ||
-            !IsPlayerCollider(other) ||
-            !IsExitAvailable())
+            !IsPlayerCollider(other))
         {
             return;
         }
 
-        TriggerQuestionnaire("collider " + other.name);
+        playerCollidersInside.Add(other.GetInstanceID());
+        if (IsExitAvailable())
+        {
+            Debug.Log("[Exit] Participant reached the highlighted Exit. Press the right-controller B button to finish.");
+        }
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        if (other != null && IsPlayerCollider(other))
+        {
+            playerCollidersInside.Remove(other.GetInstanceID());
+        }
     }
 
     private bool IsBroadTunnelDoorTrigger()
@@ -140,9 +183,7 @@ public class TeleportationEventListener : MonoBehaviour
 
     private bool IsExitAvailable()
     {
-        SceneController controller = sceneController != null
-            ? sceneController.GetComponent<SceneController>()
-            : FindObjectOfType<SceneController>();
+        SceneController controller = GetSceneController();
 
         if (controller == null)
         {
@@ -157,6 +198,35 @@ public class TeleportationEventListener : MonoBehaviour
         }
 
         return true;
+    }
+
+    private SceneController GetSceneController()
+    {
+        return sceneController != null
+            ? sceneController.GetComponent<SceneController>()
+            : FindObjectOfType<SceneController>();
+    }
+
+    private bool IsParticipantAtExit()
+    {
+        if (playerCollidersInside.Count > 0)
+        {
+            return true;
+        }
+
+        Transform participantView = ovrCameraRig != null && ovrCameraRig.centerEyeAnchor != null
+            ? ovrCameraRig.centerEyeAnchor
+            : (player != null ? player.transform : (Camera.main != null ? Camera.main.transform : null));
+        if (participantView == null)
+        {
+            return false;
+        }
+
+        Vector3 participantPosition = participantView.position;
+        Vector3 exitPosition = transform.position;
+        participantPosition.y = 0f;
+        exitPosition.y = 0f;
+        return Vector3.Distance(participantPosition, exitPosition) <= exitConfirmationDistance;
     }
 
     private void TriggerQuestionnaire(string source)
@@ -190,7 +260,7 @@ public class TeleportationEventListener : MonoBehaviour
 
     public void TriggerQuestionnaireFromGuidedTask()
     {
-        TriggerQuestionnaire("guided task completion");
+        Debug.Log("[Survey] Guided task complete; SAM remains gated by reaching Exit and pressing B.");
     }
 
     public void HideQuestionnaireForGuidedTask()

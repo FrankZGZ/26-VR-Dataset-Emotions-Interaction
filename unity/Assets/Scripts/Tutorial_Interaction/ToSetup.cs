@@ -7,7 +7,7 @@ using TMPro;
 public class ToSetup : MonoBehaviour
 {
     private const string ExitMovementInstruction =
-        "\n\n<b>Exit movement:</b> Use the controller thumbstick to move to the marked Exit position. You do not need to physically walk there.";
+        "\n\n<b>Exit movement:</b> Use the controller thumbstick to move to the marked Exit position. Once you are there, press B on the right controller to open the door and finish. You do not need to physically walk there.";
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     public Button submitButton; // submit button
@@ -113,7 +113,7 @@ public class ToSetup : MonoBehaviour
         {
             if (instructionText == null ||
                 instructionText.text.IndexOf("Exit", System.StringComparison.OrdinalIgnoreCase) < 0 ||
-                instructionText.text.Contains("You do not need to physically walk there."))
+                instructionText.text.Contains("press B on the right controller"))
             {
                 continue;
             }

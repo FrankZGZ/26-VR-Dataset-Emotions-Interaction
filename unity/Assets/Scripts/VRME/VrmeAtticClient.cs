@@ -615,7 +615,7 @@ public class VrmeAtticClient : MonoBehaviour
         switch (normalizedName)
         {
             case "tutorial_interaction":
-                return "A VR interaction tutorial with two blue cubes, a triangular prism, and a cylinder placed together as equal exploration choices. All four objects share the same simple physics interaction: they can be picked up with the grip button, moved, released, and thrown. The participant should be warmly invited to discover this interaction with any shape without singling out a preferred object or immediately commanding a throw. They can speak to the nearby avatar by holding the right-controller A button and finish at the marked Exit.";
+                return "A VR interaction tutorial with two blue cubes, a triangular prism, and a cylinder placed together as equal exploration choices. All four objects share the same simple physics interaction: they can be picked up with the grip button, moved, released, and thrown. The participant should be warmly invited to discover this interaction with any shape without singling out a preferred object or immediately commanding a throw. They can speak to the nearby avatar by holding the right-controller A button, then finish by reaching the marked Exit and pressing B on the right controller.";
             case "lake":
                 return "A jetty in front of a stone house by a calm lake, with hills covered by trees and grass. At the end of the jetty there are two stones and two paper planes. Stones can be grabbed and thrown into the lake, producing splash sounds and visible ripples on the water surface. Paper planes can also be picked up and thrown, with a visible trajectory during flight. This is background knowledge only, never volunteered. Naming an object the participant already named or is looking at is fine, but the interaction/function described here (what it can be used for or how) may only be revealed if the participant explicitly asks what they can do, what something is for, or otherwise clearly asks for help — merely naming or describing an object is not enough to unlock its function.";
             case "attic":
@@ -2556,7 +2556,7 @@ public class VrmeAtticClient : MonoBehaviour
         string sceneName = SceneManager.GetActiveScene().name;
         ClearGuidedTaskHighlights();
         Debug.Log("[VRME] Guided task completed. scene=" + sceneName + ", source=" + completionSource);
-        Debug.Log("[VRME] Conversation and scene interaction remain active until the participant enters the Exit trigger.");
+        Debug.Log("[VRME] Conversation and scene interaction remain active until the participant reaches Exit and presses B.");
         _ = SendStageCompleteAsync(sceneName, completionSource);
     }
 

@@ -27,7 +27,9 @@ public class SceneController : MonoBehaviour
 
     // Scene status.
     private bool sceneConditionsMet = false;
+    private bool exitConfirmed = false;
     public bool SceneConditionsMet => sceneConditionsMet;
+    public bool ExitConfirmed => exitConfirmed;
 
     // Start is called before the first frame update
     void Start()
@@ -87,19 +89,15 @@ public class SceneController : MonoBehaviour
                 // Conditions met.
                 sceneConditionsMet = true;
                 
-                // Check if door animator exists before using it
-                if (this.doorAnimator != null)
-                {
-                    this.doorAnimator.SetBool("openExitDoor", true);
-                }
-                
-                // Always show arrow when time is up
+                // Reaching the time/task gate only makes Exit available. The
+                // participant must reach the highlighted Exit and press B
+                // before the door opens and the questionnaire begins.
                 if (this.arrowObject != null)
                 {
                     this.arrowObject.SetActive(true);
                 }
 
-                Debug.Log("Scene conditions met, opening the door.");
+                Debug.Log("Scene conditions met; Exit is ready and waiting for participant B-button confirmation.");
             }   
         }
     }
@@ -123,14 +121,33 @@ public class SceneController : MonoBehaviour
         }
 
         sceneConditionsMet = true;
+
+        // The tutorial uses a runtime glow around the teleport anchor. Do not
+        // reactivate the legacy arrow or its text canvas here.
+        Debug.Log("[Tutorial] Exit ready for B-button confirmation without legacy arrow/text guidance.");
+    }
+
+    public bool ConfirmExitAndOpenDoor()
+    {
+        if (!sceneConditionsMet)
+        {
+            Debug.LogWarning("[Exit] Confirmation ignored because the scene time/task gate is not ready.");
+            return false;
+        }
+
+        if (exitConfirmed)
+        {
+            return true;
+        }
+
+        exitConfirmed = true;
         if (doorAnimator != null)
         {
             doorAnimator.SetBool("openExitDoor", true);
         }
 
-        // The tutorial uses a runtime glow around the teleport anchor. Do not
-        // reactivate the legacy arrow or its text canvas here.
-        Debug.Log("[Tutorial] Exit unlocked without legacy arrow/text guidance.");
+        Debug.Log("[Exit] Participant confirmed Exit; opening the door and completing the scene.");
+        return true;
     }
 
     // Start emotion survey.
