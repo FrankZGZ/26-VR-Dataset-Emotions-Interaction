@@ -884,7 +884,10 @@ public class VrmeAtticClient : MonoBehaviour
         int encodableSamples = 0;
         for (int i = 0; i < samples.Length; i++)
         {
-            int pcmValue = Mathf.RoundToInt(Mathf.Clamp(samples[i], -1f, 1f) * short.MaxValue);
+            short pcmValue = (short)Mathf.Clamp(
+                samples[i] * short.MaxValue,
+                short.MinValue,
+                short.MaxValue);
             if (pcmValue != 0 && ++encodableSamples >= requiredEncodableSamples)
             {
                 return true;
