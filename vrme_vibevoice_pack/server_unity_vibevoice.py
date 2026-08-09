@@ -941,6 +941,12 @@ async def generate_reply(
             "hint; the task is meant to be found, not handed over."
         ),
         (
+            "UNINTELLIGIBLE INPUT: If the transcription is incoherent, garbled, or you cannot understand what the "
+            "participant meant, reply with exactly this sentence and nothing else: "
+            "I didn't catch that. Please hold A and try again. "
+            "Do not mention, suggest, or redirect to any scene object or action in that case."
+        ),
+        (
             "QUESTION-ANSWERING SCOPE: Sort every user utterance into exactly one of three types before answering — this "
             "applies to statements, remarks, and compliments just as much as literal questions. "
             "(1) Current live state, such as what the participant is looking at, holding, or where a tracked object is: "
@@ -1559,6 +1565,24 @@ def normalize_avatar_self_reference(reply: str) -> str:
     for pattern, replacement in replacements:
         normalized = re.sub(pattern, replacement, normalized, flags=re.IGNORECASE)
     return normalized
+
+
+MICROPHONE_RETRY_REPLY = "I didn't catch that. Please hold A and try again."
+
+
+def normalize_unintelligible_reply(reply: str) -> str:
+    """Prevent an incomprehension response from leaking a scene/task hint."""
+    normalized = (reply or "").strip()
+    incomprehension_openings = (
+        r"^i (?:do not|don't) know what you mean(?: by that)?\b",
+        r"^i (?:do not|don't) understand what you mean\b",
+        r"^i (?:did not|didn't|could not|couldn't) understand(?: that| you)?\b",
+        r"^i (?:did not|didn't|could not|couldn't) (?:quite )?(?:catch|hear)(?: that| you)?\b",
+        r"^i(?:'m| am) not sure what you mean\b",
+    )
+    if any(re.search(pattern, normalized, re.IGNORECASE) for pattern in incomprehension_openings):
+        return MICROPHONE_RETRY_REPLY
+    return reply
 
 
 def sanitize_reply_against_current_held(
@@ -2980,7 +3004,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 # speech. The audio-stream end message also completes Unity's
                 # isSending state, so no separate silent terminal event is
                 # needed when TTS succeeds.
-                microphone_retry_reply = "I didn't catch that. Please hold A and try again."
+                microphone_retry_reply = MICROPHONE_RETRY_REPLY
                 request_start_at = request_start_at or time.time()
                 log("[AUDIO_TURN] Empty transcript; speaking microphone retry guidance.")
                 if not await send_avatar_reply(
@@ -3105,6 +3129,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 scene_context,
                 client_metadata.get("avatarCondition"),
             )
+            reply = normalize_unintelligible_reply(reply)
             reply = normalize_avatar_self_reference(reply)
             append_conversation_log(user_text, reply, CURRENT_MODE, client_metadata, scene_context)
             remember_conversation_turn(client_metadata, user_text, reply)
