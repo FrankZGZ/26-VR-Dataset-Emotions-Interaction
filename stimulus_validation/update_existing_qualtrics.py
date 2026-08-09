@@ -16,7 +16,7 @@ TOKEN = os.environ.get("QUALTRICS_TOKEN", "").strip()
 SURVEY_ID = os.environ.get("QUALTRICS_SURVEY_ID", "SV_8xpqtEWWF2wl5C6").strip()
 AUDIO_BASE = os.environ.get(
     "QUALTRICS_AUDIO_BASE",
-    "https://raw.githubusercontent.com/FrankZGZ/26-VR-Dataset-Emotions-Interaction/qualtrics-stimuli/stimulus_validation/audio",
+    "https://github.com/FrankZGZ/26-VR-Dataset-Emotions-Interaction/raw/refs/heads/qualtrics-stimuli/stimulus_validation/audio",
 ).rstrip("/")
 SURVEY_NAME = "Avatar Voice Tone Validation (current matched warm/cold module)"
 
@@ -34,7 +34,12 @@ def call(method, path, payload=None):
         BASE + path,
         data=data,
         method=method,
-        headers={"X-API-TOKEN": TOKEN, "Content-Type": "application/json"},
+        headers={
+            "X-API-TOKEN": TOKEN,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 VRME-Qualtrics-Updater/1.0",
+        },
     )
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
@@ -43,15 +48,6 @@ def call(method, path, payload=None):
         raise RuntimeError(
             f"{method} {path} -> {exc.code}: {exc.read().decode('utf-8', errors='replace')[:900]}"
         ) from exc
-
-
-GATE_JS = """Qualtrics.SurveyEngine.addOnload(function(){
-  var q=this, a=document.getElementById('%s');
-  if(!a){return;}
-  q.hideNextButton();
-  var note=document.getElementById('%s_note');
-  a.addEventListener('ended',function(){ q.showNextButton(); if(note){note.style.display='none';} });
-});"""
 
 
 def audio_html(item):
@@ -67,7 +63,7 @@ def audio_html(item):
         f'<audio id="{aid}" controls preload="auto" style="width:100%;max-width:420px" '
         f'src="{src}"></audio>'
         f'<p id="{aid}_note" style="color:#8a5a2b;font-size:13px;margin:10px 0 0">'
-        "Please listen to the whole clip. The Next button appears when it finishes.</p></div>"
+        "Please listen to the whole clip before continuing.</p></div>"
     )
     return aid, body
 
@@ -76,7 +72,7 @@ def clean_question(question):
     return {
         key: value
         for key, value in question.items()
-        if key not in {"QuestionID", "QuestionText_Unsafe"}
+        if key not in {"QuestionID", "QuestionText_Unsafe", "QuestionJS"}
     }
 
 
@@ -99,11 +95,13 @@ def main():
             suffix = old_tag.rsplit("_", 1)[-1]
             updated = clean_question(original)
             updated["DataExportTag"] = f"{new_prefix}_{suffix}"
+            if suffix != "audio" and old_tag == updated["DataExportTag"]:
+                print(f"verified {qid}: {old_tag}")
+                continue
             if suffix == "audio":
                 aid, body = audio_html(item)
                 updated["QuestionText"] = body
                 updated["QuestionDescription"] = updated["DataExportTag"]
-                updated["QuestionJS"] = GATE_JS % (aid, aid)
             call("PUT", f"/survey-definitions/{SURVEY_ID}/questions/{qid}", updated)
             print(f"updated {qid}: {old_tag} -> {updated['DataExportTag']}")
 
@@ -131,8 +129,7 @@ def main():
     options["SurveyTitle"] = SURVEY_NAME
     options["BackButton"] = "false"
     call("PUT", f"/survey-definitions/{SURVEY_ID}/options", options)
-    call("PUT", f"/survey-definitions/{SURVEY_ID}", {"SurveyName": SURVEY_NAME})
-    print(f"updated survey {SURVEY_ID}; it remains inactive")
+    print(f"updated survey content/options for {SURVEY_ID}; it remains inactive")
 
 
 if __name__ == "__main__":
