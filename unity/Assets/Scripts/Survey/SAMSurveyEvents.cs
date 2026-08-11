@@ -658,7 +658,9 @@ public class SAMSurveyEvents : MonoBehaviour
         float availableRowsHeight = panelRect.sizeDelta.y + rowStartY - bottomReserve;
         float rowSpacing = Mathf.Min(86f, availableRowsHeight / currentLabels.Length);
         float choiceSpacing = 58f;
-        Vector2 choiceSize = new Vector2(52f, Mathf.Min(44f, rowSpacing - 20f));
+        // Keep all seven choices on one row, but make them easier to target with
+        // a VR ray than the previous 52x44 buttons.
+        Vector2 choiceSize = new Vector2(56f, Mathf.Min(52f, rowSpacing - 14f));
 
         Text lowText = CreateText(likertPanel.transform, font, "Disagree", new Vector2(firstChoiceX - 98f, headerY + contentYOffset), new Vector2(88f, 24f), TextAnchor.MiddleCenter, 13);
         lowText.color = Color.black;
@@ -724,8 +726,10 @@ public class SAMSurveyEvents : MonoBehaviour
         }
 
         collider.isTrigger = true;
+        float hitWidth = isSubmit ? rect.sizeDelta.x : Mathf.Max(rect.sizeDelta.x, 58f);
+        float hitHeight = isSubmit ? rect.sizeDelta.y : Mathf.Max(rect.sizeDelta.y, 58f);
         collider.center = new Vector3(rect.sizeDelta.x * 0.5f, -rect.sizeDelta.y * 0.5f, 0f);
-        collider.size = new Vector3(rect.sizeDelta.x, rect.sizeDelta.y, 0.08f);
+        collider.size = new Vector3(hitWidth, hitHeight, 0.08f);
 
         LikertButtonHitArea hitArea = target.GetComponent<LikertButtonHitArea>();
         if (hitArea == null)
